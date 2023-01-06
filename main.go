@@ -1,9 +1,3 @@
-//TODO chat history
-// integrate app
-// wallet
-// online status
-// profiile
-
 package main
 
 import (
@@ -79,7 +73,7 @@ func reader(client Client) {
 			//TOOD check if already registered
 			client.name = msg.Value
 
-			xmsg := Msg{Type: "name", Value: "name registered"}
+			xmsg := Msg{Type: "name", Value: msg.Value + "|registered"}
 			msgByte, _ := json.Marshal(xmsg)
 			//cl.wsConn.WriteMessage(messageType, msgByte)
 			client.wsConn.WriteMessage(1, msgByte)
@@ -119,16 +113,16 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 }
 
 func setupRoutes() {
-	fs := http.FileServer(http.Dir("./static"))
-	http.Handle("/", fs)
+	// fs := http.FileServer(http.Dir("./static"))
+	// http.Handle("/", fs)
 
 	http.HandleFunc("/ws", wsEndpoint)
 }
 
 func main() {
-	fmt.Println("running on 8080")
+	fmt.Println("running on 8000")
 	clients = make(map[uuid.UUID]Client)
 	setupRoutes()
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":8000", nil))
 
 }
