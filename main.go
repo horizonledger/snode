@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -15,9 +16,9 @@ import (
 type Config struct {
 	NodeAlias string
 	Verbose   bool
-	NodePort  int
-	WebPort   int
-	SlotID    int
+	//port for websocket used by clients and peers
+	Port int
+	//SlotID int
 	// CreateGenesis bool
 }
 
@@ -27,16 +28,8 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-func readHandler(vertex Vertex) {
-	for {
-		msg := <-vertex.in_read
-		handleMsg(vertex, msg)
-	}
-}
+func getConfig(conffile string) Config {
 
-func getConfig() Config {
-
-	conffile := "config.json"
 	log.Println("config file ", conffile)
 
 	if _, err := os.Stat(conffile); os.IsNotExist(err) {
@@ -49,11 +42,15 @@ func getConfig() Config {
 		log.Fatal("Error when opening file: ", err)
 	}
 
+	fmt.Println("... ", string(content))
+
 	var config Config
 	err = json.Unmarshal(content, &config)
 	if err != nil {
 		log.Fatal("Error during Unmarshal(): ", err)
 	}
+
+	fmt.Println(">> ", config.Port)
 
 	return config
 
@@ -73,16 +70,27 @@ var (
 )
 
 func init() {
-	//env = flag.String("env", "development", "current environment")
-	port = flag.Int("port", 8000, "port number")
-	configFile = flag.String("config", "", "port number")
+
 }
 
 func main() {
+	portArg := flag.Int("port", 0, "port number")
+	configFileArg := flag.String("config", "", "config file")
 	flag.Parse()
-	log.Println("?? ", *port)
-	//config := getConfig()
-	config := Config{WebPort: *port}
+	//println("portArg ", *portArg)
+	//println("configFileArg ", *configFileArg)
+
+	cfile := "config.json"
+	if *configFileArg != "" {
+		cfile = *configFileArg
+	}
+	config := getConfig(cfile)
+
+	//override with flag
+	if *portArg != 0 {
+		config.Port = *portArg
+	}
+
 	log.Println(config)
 	quit := make(chan os.Signal)
 	signal.Notify(quit, os.Interrupt)

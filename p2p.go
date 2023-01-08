@@ -14,6 +14,7 @@ import (
 // it can be either a full peer and or a client (or sth else)
 type Vertex struct {
 	wsConn   *websocket.Conn
+	address  string
 	vertexid uuid.UUID
 	name     string
 	//channels
@@ -26,13 +27,13 @@ type Vertex struct {
 	//isLeader  bool
 }
 
-func broadcast(textmsg string) {
-	for _, cl := range vertexs {
-		log.Println("send to ", cl.vertexid, textmsg)
-		xmsg := Msg{Type: "chat", Value: textmsg}
-		cl.out_write <- xmsg
-	}
-}
+// func broadcast(textmsg string) {
+// 	for _, cl := range vertexs {
+// 		log.Println("send to ", cl.vertexid, textmsg)
+// 		xmsg := Msg{Type: "chat", Value: textmsg}
+// 		cl.out_write <- xmsg
+// 	}
+// }
 
 func readLoop(vertex Vertex) {
 	for {
@@ -42,7 +43,7 @@ func readLoop(vertex Vertex) {
 			log.Println(err)
 			return
 		}
-		log.Println("msg received: ", string(p))
+		log.Println("msg received: ", string(p)+" "+vertex.name)
 		msg := Msg{}
 		err = json.Unmarshal([]byte(string(p)), &msg)
 		if err == nil {
@@ -58,12 +59,22 @@ func readLoop(vertex Vertex) {
 }
 
 func writeLoop(vertex Vertex) {
-	log.Println("writeLoop")
+	//log.Println("writeLoop ", vertex)
 	for {
-		msgOut := <-vertex.out_write
-		log.Println("msgout  ", msgOut)
-		//xmsg := Msg{Type: "name", Value: msgOut.Value + "|registered"}
-		msgByte, _ := json.Marshal(msgOut)
-		vertex.wsConn.WriteMessage(1, msgByte)
+		//log.Println("writeLoop...")
+		select {
+		case msgOut := <-vertex.out_write:
+			fmt.Println(msgOut)
+			log.Println("msgout  ", msgOut)
+			//xmsg := Msg{Type: "name", Value: msgOut.Value + "|registered"}
+			msgByte, _ := json.Marshal(msgOut)
+			err := vertex.wsConn.WriteMessage(1, msgByte)
+			if err != nil {
+				log.Println("error writing to ", vertex.vertexid)
+			}
+		case <-time.After(time.Second * 50):
+			fmt.Println("TIMEOUT: out_write")
+		}
+
 	}
 }

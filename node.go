@@ -64,6 +64,14 @@ func connectOutbound(address string) {
 
 }
 
+func readHandler(state State, vertex Vertex) {
+	for {
+		msg := <-vertex.in_read
+		log.Println("readHandler.. ", msg)
+		handleMsg(state, vertex, msg)
+	}
+}
+
 // inbound ws connection
 func serveWs(w http.ResponseWriter, r *http.Request) {
 	// upgrade this connection to a WebSocket
@@ -74,21 +82,21 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 
 	var newuid = uuid.Must(uuid.NewV4())
 	vertex := Vertex{wsConn: ws, vertexid: newuid, name: "default", handshake: false}
-	vertexs[newuid] = vertex
+
 	log.Println("INBOUND connection established")
 	log.Println("vertex uuid ", newuid)
 
 	vertex.in_read = make(chan Msg)
 	vertex.out_write = make(chan Msg)
 
+	vertexs[newuid] = vertex
+
 	//TODO only send/receive after handshake, for that we need to read only 1 message first and then open chans
 	// --- handshake ---
 
 	go readLoop(vertex)
-	go readHandler(vertex)
+	go readHandler(state, vertex)
 	go writeLoop(vertex)
-
-	// 	vertex.out_write <- Msg{Type: "test", Value: "test"}
 
 	//wait for handshake from inbound
 	//TODO timeout
@@ -104,19 +112,34 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 }
 
 func statusLoop(vertexs map[uuid.UUID]Vertex) {
-	log.Println("statusLoop")
 	quit := make(chan struct{})
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(20 * time.Second)
 	for {
+		//log.Println("statusLoop")
 		select {
 		case <-ticker.C:
 			log.Println("status last update: ", state.LastUpdate.String())
-			for _, cl := range vertexs {
+			log.Println(len(vertexs))
+			for _, v := range vertexs {
 				xmsg := Msg{Type: "STATUS", Value: state.LastUpdate.String()}
-				log.Println("write ", xmsg)
-				cl.out_write <- xmsg
+				v.out_write <- xmsg
+
 			}
 
+		case <-quit:
+			ticker.Stop()
+			return
+		}
+	}
+}
+
+func reportVertexs() {
+	quit := make(chan struct{})
+	ticker := time.NewTicker(20 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			log.Println("#vertexs ", len(vertexs))
 		case <-quit:
 			ticker.Stop()
 			return
@@ -135,9 +158,10 @@ func isLeader() bool {
 	}
 }
 
-func handleMsg(vertex Vertex, msg Msg) {
+func handleMsg(state State, vertex Vertex, msg Msg) {
 
 	log.Println("handle msg ", msg)
+	log.Println("type >> ", msg.Type)
 
 	switch msg.Type {
 	case "STATUS":
@@ -172,7 +196,7 @@ func handleMsg(vertex Vertex, msg Msg) {
 			vertex.isPeer = false
 			vertex.isClient = true
 
-			pushState(vertex.wsConn)
+			pushState(vertex)
 
 			//push uuid to client
 			infoMsg := Msg{Type: "uuid", Value: vertex.vertexid.String()}
@@ -187,25 +211,31 @@ func handleMsg(vertex Vertex, msg Msg) {
 		log.Println("handle chat")
 
 		cid := vertex.vertexid.String()
-		log.Println("client.name ", vertex.name)
-		log.Println("cid ", cid)
+		log.Println("vertex name: ", vertex.name)
+		log.Println("vertexid: ", cid)
 		if vertex.name != "default" {
 			cid = vertex.name
 		}
 		textmsg := cid + ": " + msg.Value
+		log.Println("textmsg ", textmsg)
 		//broadcast
 		fmt.Printf("vertexs len %v", len(vertexs))
-		broadcast(textmsg)
+		//TODO fix
+		//broadcast(textmsg)
 
 		//testing
 		xmsg := Msg{Type: "chat", Value: textmsg}
 		vertex.out_write <- xmsg
 
 	case "name":
+		//TODO check duplicate names on registration
 		log.Println("handle name")
-		fmt.Print("name " + msg.Value)
-		//TOOD check if already registered
+		fmt.Println("set name to: " + msg.Value)
+		//TODO check if already registered
+		//TODO name change doesnt persist
 		vertex.name = msg.Value
+		//state.
+		fmt.Println("name now : " + vertex.name)
 
 		xmsg := Msg{Type: "name", Value: msg.Value + "|registered"}
 		vertex.out_write <- xmsg
@@ -218,20 +248,6 @@ func handleMsg(vertex Vertex, msg Msg) {
 	//save state
 	state.MsgHistory = append(state.MsgHistory, msg)
 
-}
-
-func reportVertexs() {
-	quit := make(chan struct{})
-	ticker := time.NewTicker(20 * time.Second)
-	for {
-		select {
-		case <-ticker.C:
-			log.Println("#vertexs ", len(vertexs))
-		case <-quit:
-			ticker.Stop()
-			return
-		}
-	}
 }
 
 // TODO return node
@@ -274,10 +290,32 @@ func startupNode(config Config) {
 
 }
 
-func pushState(ws *websocket.Conn) {
+// startup for testing
+func startupNodeStub(config Config) {
+
+	//TODO as args
+	state.isLeader = true
+
+	//TODO continously check leader election
+
+	vertexs = make(map[uuid.UUID]Vertex)
+	log.Println("serve")
+	go serveAll(config)
+
+	// port := "9000"
+	// host := "127.0.0.1"
+	// address := fmt.Sprintf("ws://%s:%s/ws", host, port)
+	//log.Println("connect outbound")
+	//connectOutbound(address)
+
+}
+
+func pushState(vertex Vertex) {
 	statemsg := StateMsg{State: state, Type: "state"}
+	//TODO fix message type in channel
+	//vertex.out_write <- statemsg
 	stateData, _ := json.MarshalIndent(statemsg, "", " ")
-	_ = ws.WriteMessage(1, []byte(stateData))
+	_ = vertex.wsConn.WriteMessage(1, []byte(stateData))
 }
 
 func writeState(state State) {
@@ -332,9 +370,8 @@ func saveState() {
 }
 
 func serveAll(config Config) {
-
-	fmt.Println("running on ", config.WebPort)
+	log.Println("serve on ", config.Port)
 	setupRoutes()
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(config.WebPort), nil))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(config.Port), nil))
 
 }
