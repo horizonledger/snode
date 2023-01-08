@@ -1,14 +1,42 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/websocket"
 )
+
+var vertexs = map[uuid.UUID]Vertex{}
+var state State
+
+var stateFile = "state.json"
+
+type State struct {
+	LastUpdate time.Time `json:"lastUpdate"`
+	MsgHistory []Msg     `json:"MsgHistory"`
+	isLeader   bool
+}
+
+type StateMsg struct {
+	State State  `json:"state"`
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+type Msg struct {
+	Type   string    `json:"type"`
+	Value  string    `json:"value"`
+	Sender uuid.UUID `json:"uuid,omitempty"`
+	Time   time.Time `json:"time,omitempty"`
+}
 
 func connectOutbound(address string) {
 	fmt.Println("connect outbound")
@@ -75,16 +103,16 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func heartbeatLoop(vertexs map[uuid.UUID]Vertex) {
-	log.Println("heartbeatLoop")
+func statusLoop(vertexs map[uuid.UUID]Vertex) {
+	log.Println("statusLoop")
 	quit := make(chan struct{})
 	ticker := time.NewTicker(5 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
-			log.Println("heartbeat..")
+			log.Println("status last update: ", state.LastUpdate.String())
 			for _, cl := range vertexs {
-				xmsg := Msg{Type: "HEARTBEAT", Value: "..."}
+				xmsg := Msg{Type: "STATUS", Value: state.LastUpdate.String()}
 				log.Println("write ", xmsg)
 				cl.out_write <- xmsg
 			}
@@ -96,13 +124,28 @@ func heartbeatLoop(vertexs map[uuid.UUID]Vertex) {
 	}
 }
 
+func isLeader() bool {
+	//TODO allocation of time slots depends on slotID
+	//TODO get from config
+	//if config.SlotID == 1
+	if time.Now().Second() < 30 {
+		return true
+	} else {
+		return false
+	}
+}
+
 func handleMsg(vertex Vertex, msg Msg) {
 
 	log.Println("handle msg ", msg)
 
 	switch msg.Type {
-	case "HEARTBEAT":
-		log.Println("HEARTBEAT received")
+	case "STATUS":
+		log.Println("STATUS received ")
+		log.Println(">> ", msg.Value)
+		//who is leader and follower?
+		//if follower and new state then
+		//pushState(vertex.wsConn)
 
 	case "HNDPEER":
 		//TODO check not already connected
@@ -117,6 +160,7 @@ func handleMsg(vertex Vertex, msg Msg) {
 			vertex.isPeer = true
 			vertex.isClient = false
 		}
+
 	case "HNDCLIENT":
 		if vertex.handshake {
 			log.Println("handle handshake already")
@@ -135,6 +179,9 @@ func handleMsg(vertex Vertex, msg Msg) {
 			vertex.out_write <- infoMsg
 
 		}
+
+	case "state":
+		log.Println("handle state")
 
 	case "chat":
 		log.Println("handle chat")
@@ -175,7 +222,7 @@ func handleMsg(vertex Vertex, msg Msg) {
 
 func reportVertexs() {
 	quit := make(chan struct{})
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(20 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
@@ -204,10 +251,10 @@ func startupNode(config Config) {
 		fmt.Println("messages stored ", len(state.MsgHistory))
 	}
 
-	//TODO routine to store state every x seconds
-	// state.MsgHistory = append(state.MsgHistory, Msg{Type: "test", Value: "test"})
-	// fmt.Println("state ", state)
-	// writeState(state)
+	//TODO as args
+	state.isLeader = true
+
+	//TODO continously check leader election
 
 	go saveState()
 	go reportVertexs()
@@ -223,6 +270,71 @@ func startupNode(config Config) {
 	log.Println("connect outbound")
 	connectOutbound(address)
 
-	go heartbeatLoop(vertexs)
+	go statusLoop(vertexs)
+
+}
+
+func pushState(ws *websocket.Conn) {
+	statemsg := StateMsg{State: state, Type: "state"}
+	stateData, _ := json.MarshalIndent(statemsg, "", " ")
+	_ = ws.WriteMessage(1, []byte(stateData))
+}
+
+func writeState(state State) {
+	//log.Println("write state ", state)
+	jsonData, _ := json.MarshalIndent(state, "", " ")
+	//fmt.Println(string(jsonData))
+	_ = ioutil.WriteFile(stateFile, jsonData, 0644)
+}
+
+func initStorage() State {
+	fmt.Println("init storage")
+	var emptyHistory []Msg
+	state := State{LastUpdate: time.Now(), MsgHistory: emptyHistory}
+	writeState(state)
+	return state
+}
+
+func storageInited() bool {
+	if _, err := os.Stat(stateFile); err == nil {
+		return true
+	} else {
+		return false
+	}
+}
+
+func loadStorage() State {
+
+	data, err := ioutil.ReadFile(stateFile)
+	if err != nil {
+		log.Fatalf("unable to read file: %v", err)
+	}
+	state := State{}
+	if err := json.Unmarshal(data, &state); err != nil {
+		panic(err)
+	}
+	return state
+}
+
+func saveState() {
+	//TODO store only if state has changed
+	ticker := time.NewTicker(5 * time.Second)
+	quit := make(chan struct{})
+	for {
+		select {
+		case <-ticker.C:
+			writeState(state)
+		case <-quit:
+			ticker.Stop()
+			return
+		}
+	}
+}
+
+func serveAll(config Config) {
+
+	fmt.Println("running on ", config.WebPort)
+	setupRoutes()
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(config.WebPort), nil))
 
 }

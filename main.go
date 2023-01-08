@@ -3,16 +3,12 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"time"
 
-	"github.com/gofrs/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -21,30 +17,8 @@ type Config struct {
 	Verbose   bool
 	NodePort  int
 	WebPort   int
+	SlotID    int
 	// CreateGenesis bool
-}
-
-var vertexs = map[uuid.UUID]Vertex{}
-var state State
-
-var stateFile = "state.json"
-
-type State struct {
-	LastUpdate time.Time `json:"lastUpdate"`
-	MsgHistory []Msg     `json:"MsgHistory"`
-}
-
-type StateMsg struct {
-	State State  `json:"state"`
-	Type  string `json:"type"`
-	Value string `json:"value"`
-}
-
-type Msg struct {
-	Type   string    `json:"type"`
-	Value  string    `json:"value"`
-	Sender uuid.UUID `json:"uuid,omitempty"`
-	Time   time.Time `json:"time,omitempty"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -58,12 +32,6 @@ func readHandler(vertex Vertex) {
 		msg := <-vertex.in_read
 		handleMsg(vertex, msg)
 	}
-}
-
-func pushState(ws *websocket.Conn) {
-	statemsg := StateMsg{State: state, Type: "state"}
-	stateData, _ := json.MarshalIndent(statemsg, "", " ")
-	_ = ws.WriteMessage(1, []byte(stateData))
 }
 
 func getConfig() Config {
@@ -97,82 +65,6 @@ func setupRoutes() {
 
 	http.HandleFunc("/ws", serveWs)
 }
-
-func writeState(state State) {
-	//log.Println("write state ", state)
-	jsonData, _ := json.MarshalIndent(state, "", " ")
-	//fmt.Println(string(jsonData))
-	_ = ioutil.WriteFile(stateFile, jsonData, 0644)
-}
-
-func initStorage() State {
-	fmt.Println("init storage")
-	var emptyHistory []Msg
-	state := State{LastUpdate: time.Now(), MsgHistory: emptyHistory}
-	writeState(state)
-	return state
-}
-
-func storageInited() bool {
-	if _, err := os.Stat(stateFile); err == nil {
-		return true
-	} else {
-		return false
-	}
-}
-
-func loadStorage() State {
-
-	data, err := ioutil.ReadFile(stateFile)
-	if err != nil {
-		log.Fatalf("unable to read file: %v", err)
-	}
-	state := State{}
-	if err := json.Unmarshal(data, &state); err != nil {
-		panic(err)
-	}
-	return state
-}
-
-func saveState() {
-	//TODO store only if state has changed
-	ticker := time.NewTicker(5 * time.Second)
-	quit := make(chan struct{})
-	for {
-		select {
-		case <-ticker.C:
-			writeState(state)
-		case <-quit:
-			ticker.Stop()
-			return
-		}
-	}
-}
-
-func serveAll(config Config) {
-
-	fmt.Println("running on ", config.WebPort)
-	setupRoutes()
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(config.WebPort), nil))
-
-}
-
-// type fu func()
-
-// func doContinous(f fu) {
-// 	quit := make(chan struct{})
-// 	ticker := time.NewTicker(5 * time.Second)
-// 	for {
-// 		select {
-// 		case <-ticker.C:
-// 			//
-// 			f()
-// 		case <-quit:
-// 			ticker.Stop()
-// 			return
-// 		}
-// 	}
-// }
 
 var (
 	//env  *string
