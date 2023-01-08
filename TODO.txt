@@ -1,0 +1,27 @@
+TODO fix uuid in client
+TODO fix name in history
+TODO separate message log and chat log
+TODO make names persisent with cookies
+TODO vertex to state
+TODO test with chans
+TODO test chat
+TODO push state to peer
+TODO timeslot and leader (slotID 1, slotID)
+TODO pubsub
+TODO crypto
+TODO signature and verify
+TODO tx and blocks
+TODO chain
+TODO accounts
+TODO getpeers command
+TODO deploy app under domain
+TODO replace the websocket lib
+DONE timeout reader
+DONE debug message. vertex outwrite chan set to nil
+DONE fix messages history
+DONE status every 10 seconds
+DONE pass port in command flag
+DONE connect outbound to peer
+DONE run two nodes and they have inbound and outbound connection
+DONE store json
+DONE state has lastupdate time (blockheight later)
