@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"time"
 
@@ -14,7 +16,15 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var clients = map[uuid.UUID]Client{}
+type Config struct {
+	NodeAlias string
+	Verbose   bool
+	NodePort  int
+	WebPort   int
+	// CreateGenesis bool
+}
+
+var vertexs = map[uuid.UUID]Vertex{}
 var state State
 
 var stateFile = "state.json"
@@ -37,74 +47,16 @@ type Msg struct {
 	Time   time.Time `json:"time,omitempty"`
 }
 
-type Client struct {
-	wsConn    *websocket.Conn
-	clientid  uuid.UUID
-	name      string
-	in_read   chan (Msg)
-	out_write chan (Msg)
-	//channels
-}
-
-type Peer struct {
-	wsConn   *websocket.Conn
-	clientid uuid.UUID
-	name     string
-	//channels
-}
-
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-func handleMsg(client Client, msg Msg) {
-
-	log.Println("handle msg ", msg)
-
-	switch msg.Type {
-	case "chat":
-		log.Println("handle chat")
-
-		cid := client.clientid.String()
-		log.Println("client.name ", client.name)
-		log.Println("cid ", cid)
-		if client.name != "default" {
-			cid = client.name
-		}
-		textmsg := cid + ": " + msg.Value
-		//broadcast
-		fmt.Printf("clients len %v", len(clients))
-		broadcast(textmsg)
-
-		//testing
-		xmsg := Msg{Type: "chat", Value: textmsg}
-		client.out_write <- xmsg
-
-	case "name":
-		log.Println("handle name")
-		fmt.Print("name " + msg.Value)
-		//TOOD check if already registered
-		client.name = msg.Value
-
-		xmsg := Msg{Type: "name", Value: msg.Value + "|registered"}
-		client.out_write <- xmsg
-		// msgByte, _ := json.Marshal(xmsg)
-		// //cl.wsConn.WriteMessage(messageType, msgByte)
-		// client.wsConn.WriteMessage(1, msgByte)
-	default:
-		return
-	}
-	//save state
-	state.MsgHistory = append(state.MsgHistory, msg)
-
-}
-
-func readHandler(client Client) {
+func readHandler(vertex Vertex) {
 	for {
-		msg := <-client.in_read
-		handleMsg(client, msg)
+		msg := <-vertex.in_read
+		handleMsg(vertex, msg)
 	}
 }
 
@@ -114,71 +66,28 @@ func pushState(ws *websocket.Conn) {
 	_ = ws.WriteMessage(1, []byte(stateData))
 }
 
-// inbound ws connection
-func serveWs(w http.ResponseWriter, r *http.Request) {
-	// upgrade this connection to a WebSocket
-	ws, err := upgrader.Upgrade(w, r, nil)
+func getConfig() Config {
+
+	conffile := "config.json"
+	log.Println("config file ", conffile)
+
+	if _, err := os.Stat(conffile); os.IsNotExist(err) {
+		log.Println("config file does not exist. create a file named ", conffile)
+		//return nil
+	}
+
+	content, err := ioutil.ReadFile(conffile)
 	if err != nil {
-		log.Println(err)
+		log.Fatal("Error when opening file: ", err)
 	}
 
-	log.Println("ws connection")
-
-	//TODO handshake in separate function
-
-	//wait for handshake from inbound
-	//TODO timeout
-
-	_, inMsg, err := ws.ReadMessage()
+	var config Config
+	err = json.Unmarshal(content, &config)
 	if err != nil {
-		log.Println("err ", err)
-	}
-	log.Println("read ", string(inMsg))
-
-	//determine client or peer
-	switch string(inMsg) {
-	case "HNDPEER":
-		//check if already a peer?
-		_ = ws.WriteMessage(1, []byte("ok"))
-
-	case "HNDCLIENT":
-		_ = ws.WriteMessage(1, []byte("HNDSRV"))
-		pushState(ws)
+		log.Fatal("Error during Unmarshal(): ", err)
 	}
 
-	//handle peer
-
-	//handle client
-	var newuid = uuid.Must(uuid.NewV4())
-	client := Client{wsConn: ws, clientid: newuid, name: "default"}
-	clients[newuid] = client
-	log.Println("uid ", newuid)
-	client.in_read = make(chan Msg)
-	client.out_write = make(chan Msg)
-
-	//reader(client)
-	go readLoop(client)
-	go readHandler(client)
-	go writeLoop(client)
-
-	client.out_write <- Msg{Type: "test", Value: "test"}
-
-	//client.in_read <- Msg{Type: "test", Value: "test"}
-	//client.in_read <- Msg{Type: "test", Value: "test"}
-
-	// //announce new client
-	// for _, cl := range clients {
-	// 	welcome_msg := Msg{Type: "chat", Value: newuid.String() + " entered"}
-	// 	msgByte, _ := json.Marshal(welcome_msg)
-	// 	fmt.Printf("send to %v %v\n", cl.clientid, string(msgByte))
-	// 	cl.wsConn.WriteMessage(1, msgByte)
-	// }
-
-	// //send uuid to client
-	// infoMsg := Msg{Type: "uuid", Value: newuid.String()}
-	// replyByte, _ := json.Marshal(infoMsg)
-
-	// _ = ws.WriteMessage(1, replyByte)
+	return config
 
 }
 
@@ -240,45 +149,52 @@ func saveState() {
 	}
 }
 
-func serveAll() {
-	port := 8000
-	fmt.Println("running on ", port)
+func serveAll(config Config) {
+
+	fmt.Println("running on ", config.WebPort)
 	setupRoutes()
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), nil))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(config.WebPort), nil))
 
-	for {
-
-	}
 }
 
-// TODO return node
-func startupNode() {
-	//check storage
-	//var state State
-	if !storageInited() {
-		//if first start ever init storage
-		state = initStorage()
-		fmt.Println("state ", state)
-	} else {
-		fmt.Println("storage exists. last update...")
-		state = loadStorage()
-		fmt.Println(state.LastUpdate)
-		updateSince := time.Since(state.LastUpdate)
-		fmt.Println("updated ago ", updateSince)
-		fmt.Println("messages stored ", len(state.MsgHistory))
-	}
+// type fu func()
 
-	//TODO routine to store state every x seconds
-	// state.MsgHistory = append(state.MsgHistory, Msg{Type: "test", Value: "test"})
-	// fmt.Println("state ", state)
-	// writeState(state)
+// func doContinous(f fu) {
+// 	quit := make(chan struct{})
+// 	ticker := time.NewTicker(5 * time.Second)
+// 	for {
+// 		select {
+// 		case <-ticker.C:
+// 			//
+// 			f()
+// 		case <-quit:
+// 			ticker.Stop()
+// 			return
+// 		}
+// 	}
+// }
 
-	go saveState()
+var (
+	//env  *string
+	port       *int
+	configFile *string
+)
 
-	clients = make(map[uuid.UUID]Client)
-	serveAll()
+func init() {
+	//env = flag.String("env", "development", "current environment")
+	port = flag.Int("port", 8000, "port number")
+	configFile = flag.String("config", "", "port number")
 }
 
 func main() {
-	startupNode()
+	flag.Parse()
+	log.Println("?? ", *port)
+	//config := getConfig()
+	config := Config{WebPort: *port}
+	log.Println(config)
+	quit := make(chan os.Signal)
+	signal.Notify(quit, os.Interrupt)
+	startupNode(config)
+	<-quit // This will block until you manually exists with CRl-C
+	log.Println("\nnode exiting")
 }

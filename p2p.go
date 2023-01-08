@@ -5,20 +5,39 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/gofrs/uuid"
+	"github.com/gorilla/websocket"
 )
 
+// Vertex is a wrapper around a network connection, to avoid confusion about terms
+// it can be either a full peer and or a client (or sth else)
+type Vertex struct {
+	wsConn   *websocket.Conn
+	vertexid uuid.UUID
+	name     string
+	//channels
+	in_read   chan (Msg)
+	out_write chan (Msg)
+	handshake bool
+	isPeer    bool
+	isClient  bool
+	//currently expected to validate
+	//isLeader  bool
+}
+
 func broadcast(textmsg string) {
-	for _, cl := range clients {
-		log.Println("send to ", cl.clientid, textmsg)
+	for _, cl := range vertexs {
+		log.Println("send to ", cl.vertexid, textmsg)
 		xmsg := Msg{Type: "chat", Value: textmsg}
 		cl.out_write <- xmsg
 	}
 }
 
-func readLoop(client Client) {
+func readLoop(vertex Vertex) {
 	for {
 		// contiously read in a message and put on channel
-		_, p, err := client.wsConn.ReadMessage()
+		_, p, err := vertex.wsConn.ReadMessage()
 		if err != nil {
 			log.Println(err)
 			return
@@ -30,22 +49,21 @@ func readLoop(client Client) {
 			fmt.Printf("type: %s\n", msg.Type)
 			fmt.Printf("value: %s\n", msg.Value)
 		}
-		msg.Sender = client.clientid
+		msg.Sender = vertex.vertexid
 		msg.Time = time.Now()
 		log.Println("put msg ", msg)
 
-		client.in_read <- msg
+		vertex.in_read <- msg
 	}
 }
 
-func writeLoop(client Client) {
-	log.Println("writeLoop ")
+func writeLoop(vertex Vertex) {
+	log.Println("writeLoop")
 	for {
-		log.Println("writeLoop2 ")
-		msgOut := <-client.out_write
+		msgOut := <-vertex.out_write
 		log.Println("msgout  ", msgOut)
 		//xmsg := Msg{Type: "name", Value: msgOut.Value + "|registered"}
 		msgByte, _ := json.Marshal(msgOut)
-		client.wsConn.WriteMessage(1, msgByte)
+		vertex.wsConn.WriteMessage(1, msgByte)
 	}
 }
