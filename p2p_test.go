@@ -36,7 +36,7 @@ func TestBasic(t *testing.T) {
 
 	}
 
-	log.Println(vertexs)
+	//log.Debug(vertexs)
 
 	if err := ws.WriteMessage(
 		websocket.TextMessage,

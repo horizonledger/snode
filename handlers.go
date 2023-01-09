@@ -14,6 +14,8 @@ const STATUS = "STATUS"
 const HNDPEER = "HNDPEER"
 const HNDCLIENT = "HNDCLIENT"
 const STATE = "state"
+const REQSTATE = "REQSTATE"
+const REPSTATE = "REPSTATE"
 const REQHEIGHT = "REQHEIGHT"
 const REPHEIGHT = "REPHEIGHT"
 const CHAT = "chat"
@@ -69,12 +71,33 @@ func handleMsg(state *NodeState, vertex *Vertex, msg protocol.Msg) {
 	case STATE:
 		//TODO from index i to index j
 		log.Debug("handle state")
+
 		pushState(*vertex)
+
+	case REQSTATE:
+		//TODO push only height i to j
+		//pushState(*vertex)
+		log.Info("state request... todo")
+
+	case REPSTATE:
+		//TODO merge to local state
+		log.Info("repstate... todo merge in")
 
 	case REQHEIGHT:
 		n := len(nodestate.msgstate.MsgHistory)
 		xmsg := protocol.Msg{Type: REPHEIGHT, Value: strconv.Itoa(n)}
 		vertex.out_write <- xmsg
+
+	case REPHEIGHT:
+		//TODO request the delta i to j
+		log.Info("the height of the peer is ", msg.Value)
+		log.Info("our height is ", len(nodestate.msgstate.MsgHistory))
+		h, _ := strconv.Atoi(msg.Value)
+		if len(nodestate.msgstate.MsgHistory) < h {
+			log.Info("request state, since we're behind")
+			xmsg := protocol.Msg{Type: REQSTATE, Value: strconv.Itoa(0)}
+			vertex.out_write <- xmsg
+		}
 
 	case CHAT:
 		log.Debug("handle chat")

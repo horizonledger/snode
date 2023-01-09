@@ -30,23 +30,15 @@ type MsgState struct {
 
 func connectOutbound(address string) {
 	log.Debug("connect outbound")
-	//log.Fatal(http.ListenAndServe(":8000", nil))
-	// address := url.URL{
-	// 	Scheme: "ws",
-	// 	Host:   "127.0.0.1",
-	// 	Port:   8000,
-	// }
 
 	ws, _, err := websocket.DefaultDialer.Dial(address, nil)
 	if err != nil {
 		log.Warn("Cannot connect to websocket: ", address)
 	} else {
 		log.Info("connected to websocket to ", address)
-		//sendMsg("HNDPEER", ws)
 
 		var newuid = uuid.Must(uuid.NewV4())
 		vertex := Vertex{wsConn: ws, vertexid: newuid, name: "default", handshake: false}
-		//TODO channels
 		vertex.in_read = make(chan protocol.Msg)
 		vertex.out_write = make(chan protocol.Msg)
 		nodestate.vertexs[newuid] = vertex
@@ -180,7 +172,6 @@ func isLeader() bool {
 	}
 }
 
-// TODO return node
 func startupNode(config Config) {
 	//check storage
 	//var state State
@@ -206,7 +197,7 @@ func startupNode(config Config) {
 
 	//TODO continously check leader election
 
-	go saveState(config.StateFile, &msgstate)
+	go saveState(config.StateFile, &nodestate)
 	go reportVertexs()
 	go syncState()
 
@@ -217,8 +208,6 @@ func startupNode(config Config) {
 	go serveAll(config)
 
 	for _, v := range config.InitVertex {
-		// port := "9000"
-		// host := "127.0.0.1"
 		//address := fmt.Sprintf("ws://%s:%s/ws", host, port)
 		address := fmt.Sprintf("ws://%s/ws", v)
 
@@ -250,8 +239,6 @@ func pushState(vertex Vertex) {
 	msgData, _ := json.MarshalIndent(nodestate.msgstate.MsgHistory, "", " ")
 
 	statemsg := protocol.Msg{Type: "state", Value: string(msgData)}
-	//TODO fix message type in channel
-	//vertex.out_write <- statemsg
 	stateData, _ := json.MarshalIndent(statemsg, "", " ")
 	_ = vertex.wsConn.WriteMessage(1, []byte(stateData))
 }

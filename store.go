@@ -48,14 +48,14 @@ func loadStorage(stateFile string) MsgState {
 	return state
 }
 
-func saveState(stateFile string, state *MsgState) {
+func saveState(stateFile string, nodestate *NodeState) {
 	//TODO store only if state has changed
 	ticker := time.NewTicker(5 * time.Second)
 	quit := make(chan struct{})
 	for {
 		select {
 		case <-ticker.C:
-			writeState(stateFile, state)
+			writeState(stateFile, &nodestate.msgstate)
 		case <-quit:
 			ticker.Stop()
 			return
