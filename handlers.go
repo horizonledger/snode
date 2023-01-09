@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"log"
+
+	"github.com/horizonledger/protocol"
 )
 
-func handleMsg(state State, vertex Vertex, msg Msg) {
+func handleMsg(state State, vertex *Vertex, msg protocol.Msg) {
 
 	log.Println("handle msg ", msg)
 	log.Println("type >> ", msg.Type)
@@ -25,7 +27,7 @@ func handleMsg(state State, vertex Vertex, msg Msg) {
 			log.Println("handle handshake already")
 		} else {
 			log.Println("handle handshake")
-			xmsg := Msg{Type: "HNDSHAKEPEER", Value: "confirm"}
+			xmsg := protocol.Msg{Type: "HNDSHAKEPEER", Value: "confirm"}
 			vertex.out_write <- xmsg
 			vertex.handshake = true
 			vertex.isPeer = true
@@ -37,16 +39,16 @@ func handleMsg(state State, vertex Vertex, msg Msg) {
 			log.Println("handle handshake already")
 		} else {
 			log.Println("handle handshake")
-			xmsg := Msg{Type: "HNDSHAKECLIENT", Value: "confirm"}
+			xmsg := protocol.Msg{Type: "HNDSHAKECLIENT", Value: "confirm"}
 			vertex.out_write <- xmsg
 			vertex.handshake = true
 			vertex.isPeer = false
 			vertex.isClient = true
 
-			pushState(vertex)
+			pushState(*vertex)
 
 			//push uuid to client
-			infoMsg := Msg{Type: "uuid", Value: vertex.vertexid.String()}
+			infoMsg := protocol.Msg{Type: "uuid", Value: vertex.vertexid.String()}
 			vertex.out_write <- infoMsg
 
 		}
@@ -71,7 +73,7 @@ func handleMsg(state State, vertex Vertex, msg Msg) {
 		//broadcast(textmsg)
 
 		//testing
-		xmsg := Msg{Type: "chat", Value: textmsg}
+		xmsg := protocol.Msg{Type: "chat", Value: textmsg}
 		vertex.out_write <- xmsg
 
 	case "name":
@@ -79,13 +81,13 @@ func handleMsg(state State, vertex Vertex, msg Msg) {
 		log.Println("handle name")
 		fmt.Println("set name to: " + msg.Value)
 		//TODO check if already registered
-		//TODO name change doesnt persist
+		//TODO name change doesnt persist, need to share reference to vertex map
 		vertex.name = msg.Value
-		state.vertexs[vertex.vertexid] = vertex
+		state.vertexs[vertex.vertexid] = *vertex
 		//state.
-		fmt.Println("name now : " + vertex.name)
+		fmt.Println("name now : " + vertex.name + " " + vertex.vertexid.String())
 
-		xmsg := Msg{Type: "name", Value: msg.Value + "|registered"}
+		xmsg := protocol.Msg{Type: "name", Value: msg.Value + "|registered"}
 		vertex.out_write <- xmsg
 		// msgByte, _ := json.Marshal(xmsg)
 		// //cl.wsConn.WriteMessage(messageType, msgByte)

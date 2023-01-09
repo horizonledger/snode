@@ -1,5 +1,5 @@
 {
     "NodeAlias":"horizon1",
     "Verbose": true,    
-    "Port": 9000
+    "Port": 8000
 }

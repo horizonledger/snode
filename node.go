@@ -12,6 +12,7 @@ import (
 
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/horizonledger/protocol"
 )
 
 var state State
@@ -19,8 +20,8 @@ var state State
 var stateFile = "state.json"
 
 type State struct {
-	LastUpdate time.Time `json:"lastUpdate"`
-	MsgHistory []Msg     `json:"MsgHistory"`
+	LastUpdate time.Time      `json:"lastUpdate"`
+	MsgHistory []protocol.Msg `json:"MsgHistory"`
 	isLeader   bool
 	vertexs    map[uuid.UUID]Vertex
 }
@@ -29,13 +30,6 @@ type StateMsg struct {
 	State State  `json:"state"`
 	Type  string `json:"type"`
 	Value string `json:"value"`
-}
-
-type Msg struct {
-	Type   string    `json:"type"`
-	Value  string    `json:"value"`
-	Sender uuid.UUID `json:"uuid,omitempty"`
-	Time   time.Time `json:"time,omitempty"`
 }
 
 func connectOutbound(address string) {
@@ -64,9 +58,9 @@ func connectOutbound(address string) {
 
 }
 
-func readHandler(state State, vertex Vertex) {
+func readHandler(state State, vertex *Vertex) {
 	for {
-		msg := <-vertex.in_read
+		msg := <-(*vertex).in_read
 		log.Println("readHandler.. ", msg)
 		handleMsg(state, vertex, msg)
 	}
@@ -86,17 +80,17 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	log.Println("INBOUND connection established")
 	log.Println("vertex uuid ", newuid)
 
-	vertex.in_read = make(chan Msg)
-	vertex.out_write = make(chan Msg)
+	vertex.in_read = make(chan protocol.Msg)
+	vertex.out_write = make(chan protocol.Msg)
 
 	state.vertexs[newuid] = vertex
 
 	//TODO only send/receive after handshake, for that we need to read only 1 message first and then open chans
 	// --- handshake ---
 
-	go readLoop(vertex)
-	go readHandler(state, vertex)
-	go writeLoop(vertex)
+	go readLoop(&vertex)
+	go readHandler(state, &vertex)
+	go writeLoop(&vertex)
 
 	//wait for handshake from inbound
 	//TODO timeout
@@ -121,7 +115,7 @@ func statusLoop(vertexs map[uuid.UUID]Vertex) {
 			log.Println("status last update: ", state.LastUpdate.String())
 			log.Println(len(vertexs))
 			for _, v := range vertexs {
-				xmsg := Msg{Type: "STATUS", Value: state.LastUpdate.String()}
+				xmsg := protocol.Msg{Type: "STATUS", Value: state.LastUpdate.String()}
 				v.out_write <- xmsg
 
 			}
@@ -235,7 +229,7 @@ func writeState(state State) {
 
 func initStorage() State {
 	fmt.Println("init storage")
-	var emptyHistory []Msg
+	var emptyHistory []protocol.Msg
 	state := State{LastUpdate: time.Now(), MsgHistory: emptyHistory}
 	writeState(state)
 	return state

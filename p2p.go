@@ -1,13 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/horizonledger/protocol"
 )
 
 // Vertex is a wrapper around a network connection, to avoid confusion about terms
@@ -18,8 +18,8 @@ type Vertex struct {
 	vertexid uuid.UUID
 	name     string
 	//channels
-	in_read   chan (Msg)
-	out_write chan (Msg)
+	in_read   chan (protocol.Msg)
+	out_write chan (protocol.Msg)
 	handshake bool
 	isPeer    bool
 	isClient  bool
@@ -35,7 +35,7 @@ type Vertex struct {
 // 	}
 // }
 
-func readLoop(vertex Vertex) {
+func readLoop(vertex *Vertex) {
 	for {
 		// contiously read in a message and put on channel
 		_, p, err := vertex.wsConn.ReadMessage()
@@ -43,37 +43,33 @@ func readLoop(vertex Vertex) {
 			log.Println(err)
 			return
 		}
-		log.Println("msg received: ", string(p)+" "+vertex.name)
-		msg := Msg{}
-		err = json.Unmarshal([]byte(string(p)), &msg)
-		if err == nil {
-			fmt.Printf("type: %s\n", msg.Type)
-			fmt.Printf("value: %s\n", msg.Value)
-		}
+		log.Println("bytes received: ", string(p)+" "+vertex.name)
+		msg := protocol.ParseMessageFromBytes(p)
+		log.Println("msg received: ", msg.Type+" "+vertex.name)
 		msg.Sender = vertex.vertexid
 		msg.Time = time.Now()
-		log.Println("put msg ", msg)
+		log.Println("put msg in chan: ", msg)
 
 		vertex.in_read <- msg
 	}
 }
 
-func writeLoop(vertex Vertex) {
+func writeLoop(vertex *Vertex) {
 	//log.Println("writeLoop ", vertex)
 	for {
 		//log.Println("writeLoop...")
 		select {
-		case msgOut := <-vertex.out_write:
+		case msgOut := <-(*vertex).out_write:
 			fmt.Println(msgOut)
 			log.Println("msgout  ", msgOut)
-			//xmsg := Msg{Type: "name", Value: msgOut.Value + "|registered"}
-			msgByte, _ := json.Marshal(msgOut)
-			err := vertex.wsConn.WriteMessage(1, msgByte)
+
+			msgBytes := protocol.ParseMessageToBytes(msgOut)
+			err := vertex.wsConn.WriteMessage(1, msgBytes)
 			if err != nil {
 				log.Println("error writing to ", vertex.vertexid)
 			}
 		case <-time.After(time.Second * 50):
-			fmt.Println("TIMEOUT: out_write")
+			fmt.Println("TIMEOUT: nothing to write on loop")
 		}
 
 	}
