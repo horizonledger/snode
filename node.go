@@ -42,12 +42,23 @@ func connectOutbound(address string) {
 		log.Warn("Cannot connect to websocket: ", address)
 	} else {
 		log.Info("connected to websocket to ", address)
-		sendMsg("HNDPEER", ws)
+		//sendMsg("HNDPEER", ws)
 
 		var newuid = uuid.Must(uuid.NewV4())
 		vertex := Vertex{wsConn: ws, vertexid: newuid, name: "default", handshake: false}
+		//TODO channels
+		vertex.in_read = make(chan protocol.Msg)
+		vertex.out_write = make(chan protocol.Msg)
 		nodestate.vertexs[newuid] = vertex
 		log.Info("OUTBOUND connection established")
+
+		go readLoop(&vertex)
+		go readHandler(&nodestate, &vertex)
+		go writeLoop(&vertex)
+
+		msg := protocol.Msg{Type: "HNDPEER", Value: "REQUEST"}
+		log.Debug("send ", msg)
+		vertex.out_write <- msg
 		//set peer and connected state
 	}
 
@@ -147,7 +158,7 @@ func syncState() {
 			log.Info("query state height ")
 			for _, v := range nodestate.vertexs {
 				xmsg := protocol.Msg{Type: "REQHEIGHT", Value: ""}
-				log.Info("msg ", xmsg)
+				log.Info("request height: ", xmsg)
 				v.out_write <- xmsg
 			}
 		case <-quit:
@@ -217,6 +228,17 @@ func startupNode(config Config) {
 
 	go statusLoop(nodestate.vertexs)
 
+}
+
+func sendMsg(msg string, ws *websocket.Conn) {
+
+	log.Debug("send ", msg)
+	if err := ws.WriteMessage(
+		websocket.TextMessage,
+		[]byte(msg),
+	); err != nil {
+		fmt.Println("WebSocket Write Error")
+	}
 }
 
 // startup for testing

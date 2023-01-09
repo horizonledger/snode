@@ -44,7 +44,7 @@ func readLoop(vertex *Vertex) {
 		}
 		log.Debug("bytes received: ", string(p)+" "+vertex.name)
 		msg := protocol.ParseMessageFromBytes(p)
-		log.Debug("msg received: ", msg.Type+" "+vertex.name)
+		log.Debug("msg received: ", msg.Type+" "+vertex.vertexid.String())
 		msg.Sender = vertex.vertexid
 		msg.Time = time.Now()
 		log.Debug("put msg in chan: ", msg)

@@ -90,7 +90,7 @@ func main() {
 	// log.Info("Something noteworthy happened!")
 	// log.Warn("You should probably take a look at this.")
 	// log.Error("Something failed but I'm not quitting.")
-
+	log.SetLevel(log.DebugLevel)
 	log.Info(config)
 	quit := make(chan os.Signal)
 	signal.Notify(quit, os.Interrupt)
