@@ -1,13 +1,12 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/horizonledger/protocol"
+	log "github.com/sirupsen/logrus"
 )
 
 // Vertex is a wrapper around a network connection, to avoid confusion about terms
@@ -27,9 +26,9 @@ type Vertex struct {
 	//isLeader  bool
 }
 
-func broadcast(state *State, textmsg string) {
+func broadcast(state *NodeState, textmsg string) {
 	for _, cl := range state.vertexs {
-		log.Println("send to ", cl.vertexid, textmsg)
+		log.Debug("send to ", cl.vertexid, textmsg)
 		xmsg := protocol.Msg{Type: "chat", Value: textmsg}
 		cl.out_write <- xmsg
 	}
@@ -43,12 +42,12 @@ func readLoop(vertex *Vertex) {
 			log.Println(err)
 			return
 		}
-		log.Println("bytes received: ", string(p)+" "+vertex.name)
+		log.Debug("bytes received: ", string(p)+" "+vertex.name)
 		msg := protocol.ParseMessageFromBytes(p)
-		log.Println("msg received: ", msg.Type+" "+vertex.name)
+		log.Debug("msg received: ", msg.Type+" "+vertex.name)
 		msg.Sender = vertex.vertexid
 		msg.Time = time.Now()
-		log.Println("put msg in chan: ", msg)
+		log.Debug("put msg in chan: ", msg)
 
 		vertex.in_read <- msg
 	}
@@ -60,16 +59,15 @@ func writeLoop(vertex *Vertex) {
 		//log.Println("writeLoop...")
 		select {
 		case msgOut := <-(*vertex).out_write:
-			fmt.Println(msgOut)
-			log.Println("msgout  ", msgOut)
+			log.Debug("msgout  ", msgOut)
 
 			msgBytes := protocol.ParseMessageToBytes(msgOut)
 			err := vertex.wsConn.WriteMessage(1, msgBytes)
 			if err != nil {
-				log.Println("error writing to ", vertex.vertexid)
+				log.Error("error writing to ", vertex.vertexid)
 			}
 		case <-time.After(time.Second * 50):
-			fmt.Println("TIMEOUT: nothing to write on loop")
+			log.Debug("TIMEOUT: nothing to write on loop")
 		}
 
 	}

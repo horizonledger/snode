@@ -1,0 +1,8 @@
+{
+    "NodeAlias":"horizon1",
+    "Verbose": true,    
+    "Port": 9000,
+    "NodeID": 2,
+    "StateFile": "state2.json",
+    "InitVertex": ["127.0.0.1:8000"]
+}

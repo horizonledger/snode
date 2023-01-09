@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/gorilla/websocket"
 	"log"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestBasic(t *testing.T) {
@@ -45,7 +46,6 @@ func TestBasic(t *testing.T) {
 	}
 
 	// inmsg := <-vertex.in_read
-	// fmt.Println("insg ", inmsg)
 
 	// ntchan := ConnNtchanStub("test", "testout")
 	// if ntchan.SrcName != "test" {

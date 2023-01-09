@@ -2,32 +2,32 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/horizonledger/protocol"
 )
 
-func writeState(state *State) {
+func writeState(stateFile string, state *MsgState) {
 	log.Println("write state. messages: ", len(state.MsgHistory))
-	log.Println("write state. messages: ", state.MsgHistory[len(state.MsgHistory)-1:])
+	//log.Println("write state. last message: ", state.MsgHistory[len(state.MsgHistory)-1:])
 	jsonData, _ := json.MarshalIndent(state, "", " ")
-	//fmt.Println(string(jsonData))
+	//log.Debug(string(jsonData))
 	_ = ioutil.WriteFile(stateFile, jsonData, 0644)
 }
 
-func initStorage() State {
-	fmt.Println("init storage")
+func initStorage(stateFile string) MsgState {
+	log.Debug("init storage")
 	var emptyHistory []protocol.Msg
-	state := State{LastUpdate: time.Now(), MsgHistory: emptyHistory}
-	writeState(&state)
+	state := MsgState{LastUpdate: time.Now(), MsgHistory: emptyHistory}
+	writeState(stateFile, &state)
 	return state
 }
 
-func storageInited() bool {
+func storageInited(stateFile string) bool {
 	if _, err := os.Stat(stateFile); err == nil {
 		return true
 	} else {
@@ -35,27 +35,27 @@ func storageInited() bool {
 	}
 }
 
-func loadStorage() State {
+func loadStorage(stateFile string) MsgState {
 
 	data, err := ioutil.ReadFile(stateFile)
 	if err != nil {
 		log.Fatalf("unable to read file: %v", err)
 	}
-	state := State{}
+	state := MsgState{}
 	if err := json.Unmarshal(data, &state); err != nil {
 		panic(err)
 	}
 	return state
 }
 
-func saveState(state *State) {
+func saveState(stateFile string, state *MsgState) {
 	//TODO store only if state has changed
 	ticker := time.NewTicker(5 * time.Second)
 	quit := make(chan struct{})
 	for {
 		select {
 		case <-ticker.C:
-			writeState(state)
+			writeState(stateFile, state)
 		case <-quit:
 			ticker.Stop()
 			return

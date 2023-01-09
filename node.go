@@ -3,35 +3,33 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/horizonledger/protocol"
 )
 
-var state State
+var msgstate MsgState
+var nodestate NodeState
 
-var stateFile = "state.json"
-
-type State struct {
-	LastUpdate time.Time      `json:"lastUpdate"`
-	MsgHistory []protocol.Msg `json:"MsgHistory"`
-	isLeader   bool
-	vertexs    map[uuid.UUID]Vertex
+type NodeState struct {
+	isLeader bool
+	msgstate MsgState
+	vertexs  map[uuid.UUID]Vertex
 }
 
-type StateMsg struct {
-	State State  `json:"state"`
-	Type  string `json:"type"`
-	Value string `json:"value"`
+type MsgState struct {
+	LastUpdate time.Time      `json:"lastUpdate"`
+	MsgHistory []protocol.Msg `json:"MsgHistory"`
 }
 
 func connectOutbound(address string) {
-	fmt.Println("connect outbound")
+	log.Debug("connect outbound")
 	//log.Fatal(http.ListenAndServe(":8000", nil))
 	// address := url.URL{
 	// 	Scheme: "ws",
@@ -40,27 +38,26 @@ func connectOutbound(address string) {
 	// }
 
 	ws, _, err := websocket.DefaultDialer.Dial(address, nil)
-	//fmt.Println("ws %T", ws)
 	if err != nil {
-		fmt.Println("Cannot connect to websocket: ", address)
+		log.Warn("Cannot connect to websocket: ", address)
 	} else {
-		fmt.Println("connected to websocket to ", address)
+		log.Info("connected to websocket to ", address)
 		sendMsg("HNDPEER", ws)
 
 		var newuid = uuid.Must(uuid.NewV4())
 		vertex := Vertex{wsConn: ws, vertexid: newuid, name: "default", handshake: false}
-		state.vertexs[newuid] = vertex
-		log.Println("OUTBOUND connection established")
+		nodestate.vertexs[newuid] = vertex
+		log.Info("OUTBOUND connection established")
 		//set peer and connected state
 	}
 
 }
 
-func readHandler(state *State, vertex *Vertex) {
+func readHandler(nodestate *NodeState, vertex *Vertex) {
 	for {
 		msg := <-(*vertex).in_read
-		log.Println("readHandler.. ", msg)
-		handleMsg(state, vertex, msg)
+		log.Debug("readHandler.. ", msg)
+		handleMsg(nodestate, vertex, msg)
 	}
 }
 
@@ -75,19 +72,19 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	var newuid = uuid.Must(uuid.NewV4())
 	vertex := Vertex{wsConn: ws, vertexid: newuid, name: "default", handshake: false}
 
-	log.Println("INBOUND connection established")
-	log.Println("vertex uuid ", newuid)
+	log.Info("INBOUND connection established")
+	log.Info("vertex uuid ", newuid)
 
 	vertex.in_read = make(chan protocol.Msg)
 	vertex.out_write = make(chan protocol.Msg)
 
-	state.vertexs[newuid] = vertex
+	nodestate.vertexs[newuid] = vertex
 
 	//TODO only send/receive after handshake, for that we need to read only 1 message first and then open chans
 	// --- handshake ---
 
 	go readLoop(&vertex)
-	go readHandler(&state, &vertex)
+	go readHandler(&nodestate, &vertex)
 	go writeLoop(&vertex)
 
 	//wait for handshake from inbound
@@ -110,10 +107,10 @@ func statusLoop(vertexs map[uuid.UUID]Vertex) {
 		//log.Println("statusLoop")
 		select {
 		case <-ticker.C:
-			log.Println("status last update: ", state.LastUpdate.String())
-			log.Println(len(vertexs))
+			log.Debug("status last update: ", nodestate.msgstate.LastUpdate.String())
+			log.Debug(len(vertexs))
 			for _, v := range vertexs {
-				xmsg := protocol.Msg{Type: "STATUS", Value: state.LastUpdate.String()}
+				xmsg := protocol.Msg{Type: "STATUS", Value: nodestate.msgstate.LastUpdate.String()}
 				v.out_write <- xmsg
 
 			}
@@ -131,12 +128,34 @@ func reportVertexs() {
 	for {
 		select {
 		case <-ticker.C:
-			log.Println("#vertexs ", len(state.vertexs))
+			log.Debug("#vertexs ", len(nodestate.vertexs))
 		case <-quit:
 			ticker.Stop()
 			return
 		}
 	}
+}
+
+// continously query peers
+func syncState() {
+
+	quit := make(chan struct{})
+	ticker := time.NewTicker(20 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			log.Info("query state height ")
+			for _, v := range nodestate.vertexs {
+				xmsg := protocol.Msg{Type: "REQHEIGHT", Value: ""}
+				log.Info("msg ", xmsg)
+				v.out_write <- xmsg
+			}
+		case <-quit:
+			ticker.Stop()
+			return
+		}
+	}
+
 }
 
 func isLeader() bool {
@@ -154,64 +173,61 @@ func isLeader() bool {
 func startupNode(config Config) {
 	//check storage
 	//var state State
-	if !storageInited() {
+	if !storageInited(config.StateFile) {
 		//if first start ever init storage
-		state = initStorage()
-		fmt.Println("state ", state)
+		msgstate = initStorage(config.StateFile)
+		log.Debug("state ", msgstate)
 	} else {
-		fmt.Println("storage exists. last update...")
-		state = loadStorage()
-		fmt.Println(state.LastUpdate)
-		updateSince := time.Since(state.LastUpdate)
-		fmt.Println("updated ago ", updateSince)
-		fmt.Println("messages stored ", len(state.MsgHistory))
+		log.Info("storage exists. last update...")
+		msgstate = loadStorage(config.StateFile)
+		log.Debug(msgstate.LastUpdate)
+		updateSince := time.Since(msgstate.LastUpdate)
+		log.Info("updated ago ", updateSince)
+		log.Info("messages stored ", len(msgstate.MsgHistory))
 	}
 
-	//TODO as args
-	state.isLeader = true
+	//currently set statically once
+	if config.NodeID == 1 {
+		nodestate.isLeader = true
+	} else {
+		nodestate.isLeader = false
+	}
 
 	//TODO continously check leader election
 
-	go saveState(&state)
+	go saveState(config.StateFile, &msgstate)
 	go reportVertexs()
+	go syncState()
 
-	state.vertexs = make(map[uuid.UUID]Vertex)
-	log.Println("serve")
+	//TODO
+	nodestate = NodeState{isLeader: true, msgstate: msgstate, vertexs: make(map[uuid.UUID]Vertex)}
+
+	log.Info("serve")
 	go serveAll(config)
 
-	port := "9000"
-	host := "127.0.0.1"
-	address := fmt.Sprintf("ws://%s:%s/ws", host, port)
+	for _, v := range config.InitVertex {
+		// port := "9000"
+		// host := "127.0.0.1"
+		//address := fmt.Sprintf("ws://%s:%s/ws", host, port)
+		address := fmt.Sprintf("ws://%s/ws", v)
 
-	log.Println("connect outbound")
-	connectOutbound(address)
+		log.Info("connect outbound to ", address)
+		connectOutbound(address)
+	}
 
-	go statusLoop(state.vertexs)
+	go statusLoop(nodestate.vertexs)
 
 }
 
 // startup for testing
-func startupNodeStub(config Config) {
+// func startupNodeStub(config Config) {
 
-	//TODO as args
-	state.isLeader = true
-
-	//TODO continously check leader election
-
-	state.vertexs = make(map[uuid.UUID]Vertex)
-	log.Println("serve")
-	go serveAll(config)
-
-	// port := "9000"
-	// host := "127.0.0.1"
-	// address := fmt.Sprintf("ws://%s:%s/ws", host, port)
-	//log.Println("connect outbound")
-	//connectOutbound(address)
-
-}
+// }
 
 func pushState(vertex Vertex) {
-	statemsg := StateMsg{State: state, Type: "state"}
+	msgData, _ := json.MarshalIndent(nodestate.msgstate.MsgHistory, "", " ")
+
+	statemsg := protocol.Msg{Type: "state", Value: string(msgData)}
 	//TODO fix message type in channel
 	//vertex.out_write <- statemsg
 	stateData, _ := json.MarshalIndent(statemsg, "", " ")
@@ -219,7 +235,7 @@ func pushState(vertex Vertex) {
 }
 
 func serveAll(config Config) {
-	log.Println("serve on ", config.Port)
+	log.Info("serve on ", config.Port)
 	setupRoutes()
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(config.Port), nil))
 
