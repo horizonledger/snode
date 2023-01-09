@@ -3,10 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
@@ -58,7 +56,7 @@ func connectOutbound(address string) {
 
 }
 
-func readHandler(state State, vertex *Vertex) {
+func readHandler(state *State, vertex *Vertex) {
 	for {
 		msg := <-(*vertex).in_read
 		log.Println("readHandler.. ", msg)
@@ -89,7 +87,7 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	// --- handshake ---
 
 	go readLoop(&vertex)
-	go readHandler(state, &vertex)
+	go readHandler(&state, &vertex)
 	go writeLoop(&vertex)
 
 	//wait for handshake from inbound
@@ -174,7 +172,7 @@ func startupNode(config Config) {
 
 	//TODO continously check leader election
 
-	go saveState()
+	go saveState(&state)
 	go reportVertexs()
 
 	state.vertexs = make(map[uuid.UUID]Vertex)
@@ -218,57 +216,6 @@ func pushState(vertex Vertex) {
 	//vertex.out_write <- statemsg
 	stateData, _ := json.MarshalIndent(statemsg, "", " ")
 	_ = vertex.wsConn.WriteMessage(1, []byte(stateData))
-}
-
-func writeState(state State) {
-	//log.Println("write state ", state)
-	jsonData, _ := json.MarshalIndent(state, "", " ")
-	//fmt.Println(string(jsonData))
-	_ = ioutil.WriteFile(stateFile, jsonData, 0644)
-}
-
-func initStorage() State {
-	fmt.Println("init storage")
-	var emptyHistory []protocol.Msg
-	state := State{LastUpdate: time.Now(), MsgHistory: emptyHistory}
-	writeState(state)
-	return state
-}
-
-func storageInited() bool {
-	if _, err := os.Stat(stateFile); err == nil {
-		return true
-	} else {
-		return false
-	}
-}
-
-func loadStorage() State {
-
-	data, err := ioutil.ReadFile(stateFile)
-	if err != nil {
-		log.Fatalf("unable to read file: %v", err)
-	}
-	state := State{}
-	if err := json.Unmarshal(data, &state); err != nil {
-		panic(err)
-	}
-	return state
-}
-
-func saveState() {
-	//TODO store only if state has changed
-	ticker := time.NewTicker(5 * time.Second)
-	quit := make(chan struct{})
-	for {
-		select {
-		case <-ticker.C:
-			writeState(state)
-		case <-quit:
-			ticker.Stop()
-			return
-		}
-	}
 }
 
 func serveAll(config Config) {

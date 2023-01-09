@@ -27,13 +27,13 @@ type Vertex struct {
 	//isLeader  bool
 }
 
-// func broadcast(textmsg string) {
-// 	for _, cl := range vertexs {
-// 		log.Println("send to ", cl.vertexid, textmsg)
-// 		xmsg := Msg{Type: "chat", Value: textmsg}
-// 		cl.out_write <- xmsg
-// 	}
-// }
+func broadcast(state *State, textmsg string) {
+	for _, cl := range state.vertexs {
+		log.Println("send to ", cl.vertexid, textmsg)
+		xmsg := protocol.Msg{Type: "chat", Value: textmsg}
+		cl.out_write <- xmsg
+	}
+}
 
 func readLoop(vertex *Vertex) {
 	for {

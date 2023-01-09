@@ -7,20 +7,30 @@ import (
 	"github.com/horizonledger/protocol"
 )
 
-func handleMsg(state State, vertex *Vertex, msg protocol.Msg) {
+// TODO separate different modalities
+// requests
+// transactions
+const STATUS = "STATUS"
+const HNDPEER = "HNDPEER"
+const HNDCLIENT = "HNDCLIENT"
+const STATE = "state"
+const CHAT = "chat"
+const NAME = "name"
+
+func handleMsg(state *State, vertex *Vertex, msg protocol.Msg) {
 
 	log.Println("handle msg ", msg)
 	log.Println("type >> ", msg.Type)
 
 	switch msg.Type {
-	case "STATUS":
+	case STATUS:
 		log.Println("STATUS received ")
 		log.Println(">> ", msg.Value)
 		//who is leader and follower?
 		//if follower and new state then
 		//pushState(vertex.wsConn)
 
-	case "HNDPEER":
+	case HNDPEER:
 		//TODO check not already connected
 		//TODO pubkey exchange here
 		if vertex.handshake {
@@ -34,7 +44,7 @@ func handleMsg(state State, vertex *Vertex, msg protocol.Msg) {
 			vertex.isClient = false
 		}
 
-	case "HNDCLIENT":
+	case HNDCLIENT:
 		if vertex.handshake {
 			log.Println("handle handshake already")
 		} else {
@@ -45,6 +55,7 @@ func handleMsg(state State, vertex *Vertex, msg protocol.Msg) {
 			vertex.isPeer = false
 			vertex.isClient = true
 
+			//separate message. client needs to pull
 			pushState(*vertex)
 
 			//push uuid to client
@@ -53,10 +64,12 @@ func handleMsg(state State, vertex *Vertex, msg protocol.Msg) {
 
 		}
 
-	case "state":
+	case STATE:
+		//TODO from index i to index j
 		log.Println("handle state")
+		pushState(*vertex)
 
-	case "chat":
+	case CHAT:
 		log.Println("handle chat")
 
 		cid := vertex.vertexid.String()
@@ -70,13 +83,14 @@ func handleMsg(state State, vertex *Vertex, msg protocol.Msg) {
 		//broadcast
 		fmt.Printf("vertexs len %v", len(state.vertexs))
 		//TODO fix
-		//broadcast(textmsg)
+		broadcast(state, textmsg)
 
 		//testing
-		xmsg := protocol.Msg{Type: "chat", Value: textmsg}
-		vertex.out_write <- xmsg
+		// xmsg := protocol.Msg{Type: "chat", Value: textmsg}
+		// vertex.out_write <- xmsg
 
-	case "name":
+	//register name only, no transfers yet
+	case NAME:
 		//TODO check duplicate names on registration
 		log.Println("handle name")
 		fmt.Println("set name to: " + msg.Value)
@@ -96,6 +110,7 @@ func handleMsg(state State, vertex *Vertex, msg protocol.Msg) {
 		return
 	}
 	//save state
+	log.Println("save state")
 	state.MsgHistory = append(state.MsgHistory, msg)
 
 }
