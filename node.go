@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -19,6 +18,8 @@ var nodestate NodeState
 
 type NodeState struct {
 	isLeader bool
+	//TODO change entry pubkeys
+	unames   map[string]uuid.UUID
 	msgstate MsgState
 	vertexs  map[uuid.UUID]Vertex
 }
@@ -26,6 +27,20 @@ type NodeState struct {
 type MsgState struct {
 	LastUpdate time.Time      `json:"lastUpdate"`
 	MsgHistory []protocol.Msg `json:"MsgHistory"`
+}
+
+func syncHistory(vertex *Vertex) {
+	if len(nodestate.msgstate.MsgHistory) == 0 {
+		log.Info("our height is 0.. pull all")
+		xmsg := protocol.Msg{Type: REQSTATE, Value: strconv.Itoa(0)}
+		vertex.out_write <- protocol.MsgToGen(xmsg)
+	} else {
+		n := len(nodestate.msgstate.MsgHistory)
+		log.Info("n ", n)
+		lastMsgTime := nodestate.msgstate.MsgHistory[n-1].Time
+		//TODO need to compare duration and figure out if we're behind
+		log.Info("our last time : ", lastMsgTime)
+	}
 }
 
 func connectOutbound(address string) {
@@ -39,8 +54,8 @@ func connectOutbound(address string) {
 
 		var newuid = uuid.Must(uuid.NewV4())
 		vertex := Vertex{wsConn: ws, vertexid: newuid, name: "default", handshake: false}
-		vertex.in_read = make(chan protocol.Msg)
-		vertex.out_write = make(chan protocol.Msg)
+		vertex.in_read = make(chan protocol.Gen)
+		vertex.out_write = make(chan protocol.Gen)
 		nodestate.vertexs[newuid] = vertex
 		log.Info("OUTBOUND connection established")
 
@@ -50,7 +65,7 @@ func connectOutbound(address string) {
 
 		msg := protocol.Msg{Type: "HNDPEER", Value: "REQUEST"}
 		log.Debug("send ", msg)
-		vertex.out_write <- msg
+		vertex.out_write <- protocol.MsgToGen(msg)
 		//set peer and connected state
 	}
 
@@ -58,9 +73,14 @@ func connectOutbound(address string) {
 
 func readHandler(nodestate *NodeState, vertex *Vertex) {
 	for {
-		msg := <-(*vertex).in_read
-		log.Debug("readHandler.. ", msg)
-		handleMsg(nodestate, vertex, msg)
+		genmsg := <-(*vertex).in_read
+		log.Debug("readHandler.. ", genmsg)
+		if genmsg.Type == "Msg" {
+			msg := protocol.ParseMessageFromBytes(genmsg.Value)
+			log.Debug("msg.. ", msg)
+			handleMsg(nodestate, vertex, msg)
+		}
+
 	}
 }
 
@@ -78,8 +98,8 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	log.Info("INBOUND connection established")
 	log.Info("vertex uuid ", newuid)
 
-	vertex.in_read = make(chan protocol.Msg)
-	vertex.out_write = make(chan protocol.Msg)
+	vertex.in_read = make(chan protocol.Gen)
+	vertex.out_write = make(chan protocol.Gen)
 
 	nodestate.vertexs[newuid] = vertex
 
@@ -103,6 +123,12 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func syncLoop(vertexs map[uuid.UUID]Vertex) {
+	//for each vertex check the height
+
+	//if we're behind then
+}
+
 func statusLoop(vertexs map[uuid.UUID]Vertex) {
 	quit := make(chan struct{})
 	ticker := time.NewTicker(20 * time.Second)
@@ -114,7 +140,7 @@ func statusLoop(vertexs map[uuid.UUID]Vertex) {
 			log.Debug(len(vertexs))
 			for _, v := range vertexs {
 				xmsg := protocol.Msg{Type: "STATUS", Value: nodestate.msgstate.LastUpdate.String()}
-				v.out_write <- xmsg
+				v.out_write <- protocol.MsgToGen(xmsg)
 
 			}
 
@@ -149,9 +175,12 @@ func syncState() {
 		case <-ticker.C:
 			log.Info("query state height ")
 			for _, v := range nodestate.vertexs {
-				xmsg := protocol.Msg{Type: "REQHEIGHT", Value: ""}
-				log.Info("request height: ", xmsg)
-				v.out_write <- xmsg
+				//only sync with peers not clients
+				if v.isPeer {
+					xmsg := protocol.Msg{Type: "REQHEIGHT", Value: ""}
+					log.Info("request height: ", xmsg)
+					v.out_write <- protocol.MsgToGen(xmsg)
+				}
 			}
 		case <-quit:
 			ticker.Stop()
@@ -186,6 +215,11 @@ func startupNode(config Config) {
 		updateSince := time.Since(msgstate.LastUpdate)
 		log.Info("updated ago ", updateSince)
 		log.Info("messages stored ", len(msgstate.MsgHistory))
+		n := len(msgstate.MsgHistory)
+		if n > 0 {
+			log.Info("last message  ", msgstate.MsgHistory[n-1])
+			log.Info("last message time ", msgstate.MsgHistory[n-1].Time)
+		}
 	}
 
 	//currently set statically once
@@ -203,6 +237,9 @@ func startupNode(config Config) {
 
 	//TODO
 	nodestate = NodeState{isLeader: true, msgstate: msgstate, vertexs: make(map[uuid.UUID]Vertex)}
+	nodestate.unames = make(map[string]uuid.UUID)
+	var newuid = uuid.Must(uuid.NewV4())
+	nodestate.unames["test"] = newuid
 
 	log.Info("serve")
 	go serveAll(config)
@@ -234,14 +271,6 @@ func sendMsg(msg string, ws *websocket.Conn) {
 // func startupNodeStub(config Config) {
 
 // }
-
-func pushState(vertex Vertex) {
-	msgData, _ := json.MarshalIndent(nodestate.msgstate.MsgHistory, "", " ")
-
-	statemsg := protocol.Msg{Type: "state", Value: string(msgData)}
-	stateData, _ := json.MarshalIndent(statemsg, "", " ")
-	_ = vertex.wsConn.WriteMessage(1, []byte(stateData))
-}
 
 func serveAll(config Config) {
 	log.Info("serve on ", config.Port)

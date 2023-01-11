@@ -17,11 +17,13 @@ type Vertex struct {
 	vertexid uuid.UUID
 	name     string
 	//channels
-	in_read   chan (protocol.Msg)
-	out_write chan (protocol.Msg)
+	in_read   chan (protocol.Gen)
+	out_write chan (protocol.Gen)
 	handshake bool
 	isPeer    bool
 	isClient  bool
+	//TODO will be blockheight later
+	height time.Time
 	//currently expected to validate
 	//isLeader  bool
 }
@@ -29,8 +31,11 @@ type Vertex struct {
 func broadcast(state *NodeState, textmsg string) {
 	for _, cl := range state.vertexs {
 		log.Debug("send to ", cl.vertexid, textmsg)
+		//TODO in separate generic function which translates Msg to Gen
 		xmsg := protocol.Msg{Type: "chat", Value: textmsg}
-		cl.out_write <- xmsg
+		jxmsg := protocol.ParseMessageToBytes(xmsg)
+		gen := protocol.Gen{Type: "Msg", Value: jxmsg}
+		cl.out_write <- gen
 	}
 }
 
@@ -43,13 +48,16 @@ func readLoop(vertex *Vertex) {
 			return
 		}
 		log.Debug("bytes received: ", string(p)+" "+vertex.name)
-		msg := protocol.ParseMessageFromBytes(p)
-		log.Debug("msg received: ", msg.Type+" "+vertex.vertexid.String())
-		msg.Sender = vertex.vertexid
-		msg.Time = time.Now()
-		log.Debug("put msg in chan: ", msg)
+		//msg := protocol.ParseMessageFromBytes(p)
+		genmsg := protocol.ParseGenFromBytes(p)
+		log.Debug("gen received: ", genmsg.Type+" "+vertex.vertexid.String())
+		genmsg.Sender = vertex.vertexid
+		genmsg.Time = time.Now()
+		log.Debug("put msg in chan: ", genmsg)
 
-		vertex.in_read <- msg
+		//gengmsg.Value = x
+		//z := protocol.ParseMessageFromBytes(genmsg.Value)
+		vertex.in_read <- genmsg
 	}
 }
 
@@ -60,9 +68,11 @@ func writeLoop(vertex *Vertex) {
 		select {
 		case msgOut := <-(*vertex).out_write:
 			log.Debug("msgout  ", msgOut)
+			//TODO handle transactions
 
-			msgBytes := protocol.ParseMessageToBytes(msgOut)
-			err := vertex.wsConn.WriteMessage(1, msgBytes)
+			//msgBytes := protocol.ParseMessageToBytes(msgOut)
+			genmsgBytes := protocol.ParseGenToBytes(msgOut)
+			err := vertex.wsConn.WriteMessage(1, genmsgBytes)
 			if err != nil {
 				log.Error("error writing to ", vertex.vertexid)
 			}
