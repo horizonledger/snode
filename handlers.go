@@ -38,6 +38,17 @@ func containsName(m map[string]uuid.UUID, v string) bool {
 	// return false
 }
 
+func handleTx(state *NodeState, vertex *Vertex, tx protocol.NameTx) {
+
+	switch tx.Type {
+	case NAME:
+		log.Debug("handletx .. name")
+		log.Debug(tx.Action)
+		log.Debug(tx.Name)
+	}
+
+}
+
 func handleMsg(state *NodeState, vertex *Vertex, msg protocol.Msg) {
 
 	log.Debug("handle msg ", msg)

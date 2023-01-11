@@ -71,19 +71,6 @@ func connectOutbound(address string) {
 
 }
 
-func readHandler(nodestate *NodeState, vertex *Vertex) {
-	for {
-		genmsg := <-(*vertex).in_read
-		log.Debug("readHandler.. ", genmsg)
-		if genmsg.Type == "Msg" {
-			msg := protocol.ParseMessageFromBytes(genmsg.Value)
-			log.Debug("msg.. ", msg)
-			handleMsg(nodestate, vertex, msg)
-		}
-
-	}
-}
-
 // inbound ws connection
 func serveWs(w http.ResponseWriter, r *http.Request) {
 	// upgrade this connection to a WebSocket

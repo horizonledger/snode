@@ -82,3 +82,21 @@ func writeLoop(vertex *Vertex) {
 
 	}
 }
+
+func readHandler(nodestate *NodeState, vertex *Vertex) {
+	for {
+		genmsg := <-(*vertex).in_read
+		log.Debug("readHandler.. ", genmsg)
+		if genmsg.Type == "Msg" {
+			msg := protocol.ParseMessageFromBytes(genmsg.Value)
+			log.Debug("msg.. ", msg)
+			handleMsg(nodestate, vertex, msg)
+		} else if genmsg.Type == "NameTx" {
+			log.Info("handle tx..")
+			tx := protocol.ParseTxFromBytes(genmsg.Value)
+			log.Info("> tx..", tx)
+			handleTx(nodestate, vertex, tx)
+		}
+
+	}
+}
