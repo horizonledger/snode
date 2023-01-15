@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/horizonledger/protocol"
 	. "github.com/horizonledger/protocol"
 	log "github.com/sirupsen/logrus"
 )
@@ -93,6 +94,25 @@ func writeLoop(nodestate *NodeState, vertex *Vertex) {
 	}
 }
 
+func handleSub(nodestate *NodeState, vertex *Vertex, msg protocol.Msg) {
+	//TODO which topic is being subscribed to?
+	log.Info("handle sub")
+
+	topic := msg.Value
+	log.Info("handle sub ", topic)
+
+	//maybe jsut
+	//validate topic is valid
+	hookVertexToSub(vertex, topic)
+
+	//switch msg.Value {
+	//TODO create a map of string > func
+	// case "vertex":
+	//hookVertexToSub(&vertex, "vertex")
+	//
+	//}
+}
+
 func readHandler(nodestate *NodeState, vertex *Vertex) {
 	for {
 		genmsg := <-(*vertex).in_read
@@ -114,6 +134,8 @@ func readHandler(nodestate *NodeState, vertex *Vertex) {
 				log.Info("pub...")
 			case "SUB":
 				log.Info("sub...")
+				handleSub(nodestate, vertex, msg)
+
 			}
 			//TODO
 			//handleMsg(nodestate, vertex, msg)

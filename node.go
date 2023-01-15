@@ -118,8 +118,8 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	go writeLoop(&nodestate, &vertex)
 
 	//TODO do this on SUB message from subscriber
-	hookVertexToSub(&vertex, "vertex")
-	hookVertexToSub(&vertex, "status")
+	//hookVertexToSub(&vertex, "vertex")
+	//hookVertexToSub(&vertex, "status")
 
 	//wait for handshake from inbound
 	//TODO timeout
@@ -218,6 +218,7 @@ func startupNode(config Config) {
 
 	nodestate.pubsub = NewPubsub()
 
+	//TODO remove
 	//TESTING
 	// ch1 := make(chan protocol.Gen)
 	// go func() {
@@ -229,8 +230,6 @@ func startupNode(config Config) {
 	// }()
 	// topic := "vertex"
 	// nodestate.pubsub.Subscribe(topic, ch1)
-
-	//pubsub.Publish("test", "just testing")
 
 	log.Info("serve")
 	go serveAll(config)
@@ -245,7 +244,7 @@ func startupNode(config Config) {
 
 	//start publishing default topics
 	go pubVertexs(nodestate.pubsub)
-	go pubStatus(nodestate.vertexs)
+	go pubStatus(nodestate.pubsub)
 
 }
 
