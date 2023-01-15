@@ -1,11 +1,12 @@
 package main
 
 import (
+	"sync"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/horizonledger/protocol"
+	. "github.com/horizonledger/protocol"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -17,8 +18,8 @@ type Vertex struct {
 	vertexid uuid.UUID
 	name     string
 	//channels
-	in_read   chan (protocol.Gen)
-	out_write chan (protocol.Gen)
+	in_read   chan (Gen)
+	out_write chan (Gen)
 	handshake bool
 	isPeer    bool
 	isClient  bool
@@ -32,9 +33,9 @@ func broadcast(state *NodeState, textmsg string) {
 	for _, cl := range state.vertexs {
 		log.Debug("send to ", cl.vertexid, textmsg)
 		//TODO in separate generic function which translates Msg to Gen
-		xmsg := protocol.Msg{Type: "chat", Value: textmsg}
-		jxmsg := protocol.ParseMessageToBytes(xmsg)
-		gen := protocol.Gen{Type: "Msg", Value: jxmsg}
+		xmsg := Msg{Type: "chat", Value: textmsg}
+		jxmsg := ParseMessageToBytes(xmsg)
+		gen := Gen{Type: "Msg", Value: jxmsg}
 		cl.out_write <- gen
 	}
 }
@@ -44,37 +45,46 @@ func readLoop(vertex *Vertex) {
 		// contiously read in a message and put on channel
 		_, p, err := vertex.wsConn.ReadMessage()
 		if err != nil {
-			log.Println(err)
+			log.Warn("error read loop ", err)
 			return
 		}
-		log.Debug("bytes received: ", string(p)+" "+vertex.name)
-		//msg := protocol.ParseMessageFromBytes(p)
-		genmsg := protocol.ParseGenFromBytes(p)
-		log.Debug("gen received: ", genmsg.Type+" "+vertex.vertexid.String())
-		genmsg.Sender = vertex.vertexid
+		log.Info("bytes received: ", string(p)+" "+vertex.name)
+		//msg := ParseMessageFromBytes(p)
+		genmsg := ParseGenFromBytes(p)
+		log.Info("gen received: ", genmsg.Type+" "+vertex.vertexid.String())
+		//TODO
+		if vertex.name != "default" {
+			genmsg.Sender = vertex.name
+		}
+		//vertex.vertexid
 		genmsg.Time = time.Now()
-		log.Debug("put msg in chan: ", genmsg)
+
+		log.Info("put msg in chan: ", genmsg)
 
 		//gengmsg.Value = x
-		//z := protocol.ParseMessageFromBytes(genmsg.Value)
+		//z := ParseMessageFromBytes(genmsg.Value)
 		vertex.in_read <- genmsg
 	}
 }
 
-func writeLoop(vertex *Vertex) {
+func writeLoop(nodestate *NodeState, vertex *Vertex) {
 	//log.Println("writeLoop ", vertex)
 	for {
 		//log.Println("writeLoop...")
 		select {
 		case msgOut := <-(*vertex).out_write:
-			log.Debug("msgout  ", msgOut)
+			log.Trace("msg out  ", msgOut)
 			//TODO handle transactions
 
-			//msgBytes := protocol.ParseMessageToBytes(msgOut)
-			genmsgBytes := protocol.ParseGenToBytes(msgOut)
+			//msgBytes := ParseMessageToBytes(msgOut)
+			genmsgBytes := ParseGenToBytes(msgOut)
 			err := vertex.wsConn.WriteMessage(1, genmsgBytes)
 			if err != nil {
 				log.Error("error writing to ", vertex.vertexid)
+				log.Error("close connection ", vertex.vertexid)
+				vertex.wsConn.Close()
+				delete(nodestate.vertexs, vertex.vertexid)
+
 			}
 		case <-time.After(time.Second * 50):
 			log.Debug("TIMEOUT: nothing to write on loop")
@@ -86,17 +96,92 @@ func writeLoop(vertex *Vertex) {
 func readHandler(nodestate *NodeState, vertex *Vertex) {
 	for {
 		genmsg := <-(*vertex).in_read
-		log.Debug("readHandler.. ", genmsg)
+		log.Info("readHandler ", genmsg)
+		log.Info("type ", genmsg.Type)
 		if genmsg.Type == "Msg" {
-			msg := protocol.ParseMessageFromBytes(genmsg.Value)
-			log.Debug("msg.. ", msg)
-			handleMsg(nodestate, vertex, msg)
+			msg := ParseMessageFromBytes(genmsg.Value)
+			msg.Time = time.Now()
+			//msg.Sender = vertex.vertexid
+			msg.Sender = vertex.name
+			log.Info("msg handler ", msg)
+			switch msg.Category {
+			case "REQ":
+				log.Info("request...")
+				handleRequest(nodestate, vertex, msg)
+			case "REP":
+				log.Info("reply...")
+			case "PUB":
+				log.Info("pub...")
+			case "SUB":
+				log.Info("sub...")
+			}
+			//TODO
+			//handleMsg(nodestate, vertex, msg)
+
 		} else if genmsg.Type == "NameTx" {
 			log.Info("handle tx..")
-			tx := protocol.ParseTxFromBytes(genmsg.Value)
+			tx := ParseTxFromBytes(genmsg.Value)
 			log.Info("> tx..", tx)
 			handleTx(nodestate, vertex, tx)
+			//TODO time
 		}
 
 	}
 }
+
+type Pubsub struct {
+	mu sync.RWMutex
+	//topic is by string
+	subs map[string][]chan Gen
+	//closed bool
+}
+
+func (ps *Pubsub) Subscribe(topic string, ch chan Gen) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	ps.subs[topic] = append(ps.subs[topic], ch)
+}
+
+func (ps *Pubsub) UnSubscribe(topic string, ch chan Gen) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	delete(ps.subs, topic)
+}
+
+func NewPubsub() *Pubsub {
+	ps := &Pubsub{}
+	ps.subs = make(map[string][]chan Gen)
+	return ps
+}
+
+func (ps *Pubsub) Publish(topic string, msg Gen) {
+	log.Println("publish...")
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+
+	// if ps.closed {
+	// 	return
+	//   }
+
+	for _, ch := range ps.subs[topic] {
+		log.Println("publish... ", ch, topic, msg)
+		ch <- msg
+	}
+}
+
+//not used
+// func (ps *Pubsub) Close() {
+// 	ps.mu.Lock()
+// 	defer ps.mu.Unlock()
+
+// 	if !ps.closed {
+// 	  ps.closed = true
+// 	  for _, subs := range ps.subs {
+// 		for _, ch := range subs {
+// 		  close(ch)
+// 		}
+// 	  }
+// 	}
+//   }

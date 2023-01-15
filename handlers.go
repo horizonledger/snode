@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofrs/uuid"
 	"github.com/horizonledger/protocol"
+	"github.com/horizonledger/protocol/crypto"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -14,6 +15,8 @@ import (
 // transactions
 // system level messages
 const STATUS = "STATUS"
+const PING = "PING"
+const PONG = "PONG"
 const HNDPEER = "HNDPEER"
 const HNDCLIENT = "HNDCLIENT"
 const STATE = "state"
@@ -25,6 +28,7 @@ const REPHEIGHT = "REPHEIGHT"
 // app level messages
 const CHAT = "chat"
 const NAME = "name"
+const INFO = "info"
 
 func containsName(m map[string]uuid.UUID, v string) bool {
 	_, ok := m[v]
@@ -38,47 +42,65 @@ func containsName(m map[string]uuid.UUID, v string) bool {
 	// return false
 }
 
+func handleNameRegister(nodestate *NodeState, vertex *Vertex, newName string) {
+	//newName := msg.Value
+	if containsName(nodestate.unames, newName) {
+		log.Debug("name exists")
+		//TODO better message here
+		xmsg := protocol.Msg{Type: NAME, Value: newName + "|exists already"}
+		vertex.out_write <- protocol.MsgToGen(xmsg)
+	} else {
+
+		log.Debug("handle name")
+		log.Info("set name to: " + newName)
+		//TODO check if already registered
+		//TODO name change doesnt persist, need to share reference to vertex map
+		vertex.name = newName
+		nodestate.vertexs[vertex.vertexid] = *vertex
+		//state.
+		log.Info("name now : " + vertex.name + " " + vertex.vertexid.String())
+		//set owner
+		//TODO make this pubkey
+		nodestate.unames[newName] = vertex.vertexid
+		//TODO txid
+		xmsg := protocol.Msg{Type: NAME, Value: newName + "|registered"}
+		vertex.out_write <- protocol.MsgToGen(xmsg)
+
+	}
+}
+
 func handleTx(state *NodeState, vertex *Vertex, tx protocol.NameTx) {
 
 	switch tx.Type {
 	case NAME:
+		//TODO check action
 		log.Debug("handletx .. name")
-		log.Debug(tx.Action)
-		log.Debug(tx.Name)
+		// log.Debug(tx.Action)
+		// log.Debug(tx.Name)
+		// log.Debug(tx.Signature)
+		// log.Debug(tx.SenderPubkey)
+		// log.Debug(tx)
+		pub := crypto.PubKeyFromHex(tx.SenderPubkey)
+		sigValid := crypto.VerifySignedTx(pub, tx)
+		log.Println("verified tx ", sigValid)
+		if sigValid {
+			handleNameRegister(state, vertex, tx.Name)
+		}
 	}
 
 }
 
-func handleMsg(state *NodeState, vertex *Vertex, msg protocol.Msg) {
-
-	log.Debug("handle msg ", msg)
-	log.Debug("type >> ", msg.Type)
+func handleRequest(state *NodeState, vertex *Vertex, msg protocol.Msg) {
 
 	switch msg.Type {
-	case STATUS:
-		log.Debug("STATUS received ")
-		log.Debug(">> ", msg.Value)
-		//who is leader and follower?
-		//if follower and new state then
-		//pushState(vertex.wsConn)
 
-	case HNDPEER:
-		//TODO check not already connected
-		//TODO pubkey exchange here
-		if vertex.handshake {
-			log.Info("handle handshake already")
-		} else {
-			log.Info("handle handshake")
-			xmsg := protocol.Msg{Type: "HNDSHAKEPEER", Value: "confirm"}
-			vertex.out_write <- protocol.MsgToGen(xmsg)
-			vertex.handshake = true
-			vertex.isPeer = true
-			vertex.isClient = false
-		}
+	case PING:
+		xmsg := protocol.Msg{Type: PONG, Value: "confirm"}
+		vertex.out_write <- protocol.MsgToGen(xmsg)
 
 	case HNDCLIENT:
 		if vertex.handshake {
-			log.Debug("handle handshake already")
+			log.Debug("handled handshake already")
 		} else {
 			log.Debug("handle handshake")
 			xmsg := protocol.Msg{Type: "HNDSHAKECLIENT", Value: "confirm"}
@@ -94,6 +116,36 @@ func handleMsg(state *NodeState, vertex *Vertex, msg protocol.Msg) {
 			infoMsg := protocol.Msg{Type: "uuid", Value: vertex.vertexid.String()}
 			vertex.out_write <- protocol.MsgToGen(infoMsg)
 
+		}
+	}
+}
+
+func handleMsg(state *NodeState, vertex *Vertex, msg protocol.Msg) {
+
+	log.Debug("handle msg ", msg)
+	log.Debug("type >> ", msg.Type)
+
+	switch msg.Type {
+
+	case STATUS:
+		log.Debug("STATUS received ")
+		log.Debug(">> ", msg.Value)
+		//who is leader and follower?
+		//if follower and new state then
+		//pushState(vertex.wsConn)
+
+	case HNDPEER:
+		//TODO check not already connected
+		//TODO pubkey exchange here
+		if vertex.handshake {
+			log.Info("handle handshake already")
+		} else {
+			log.Info("handle handshake")
+			xmsg := protocol.Msg{Type: HNDPEER, Value: "confirm"}
+			vertex.out_write <- protocol.MsgToGen(xmsg)
+			vertex.handshake = true
+			vertex.isPeer = true
+			vertex.isClient = false
 		}
 
 	case REQSTATE:
@@ -159,20 +211,25 @@ func handleMsg(state *NodeState, vertex *Vertex, msg protocol.Msg) {
 		// }
 
 	case CHAT:
-		log.Debug("handle chat")
+		log.Info("handle chat")
 
 		cid := vertex.vertexid.String()
 		log.Debug("vertex name: ", vertex.name)
 		log.Debug("vertexid: ", cid)
-		if vertex.name != "default" {
-			cid = vertex.name
+		if vertex.name == "default" {
+			log.Info("need to register")
+			//cid = vertex.name
+			xmsg := protocol.Msg{Type: INFO, Value: "register name first"}
+			vertex.out_write <- protocol.MsgToGen(xmsg)
+
+		} else {
+			textmsg := vertex.name + ": " + msg.Value
+			log.Debug("textmsg ", textmsg)
+			//broadcast
+			log.Debug("vertexs len ", len(state.vertexs))
+			//TODO fix
+			broadcast(state, textmsg)
 		}
-		textmsg := cid + ": " + msg.Value
-		log.Debug("textmsg ", textmsg)
-		//broadcast
-		log.Debug("vertexs len ", len(state.vertexs))
-		//TODO fix
-		broadcast(state, textmsg)
 
 		//testing
 		// xmsg := protocol.Msg{Type: "chat", Value: textmsg}
@@ -181,30 +238,7 @@ func handleMsg(state *NodeState, vertex *Vertex, msg protocol.Msg) {
 	//register name only, no transfers yet
 	case NAME:
 		//TODO check duplicate names on registration
-		newName := msg.Value
-		if containsName(nodestate.unames, newName) {
-			log.Debug("name exists")
-			//TODO better message here
-			xmsg := protocol.Msg{Type: NAME, Value: newName + "|exists already"}
-			vertex.out_write <- protocol.MsgToGen(xmsg)
-		} else {
-
-			log.Debug("handle name")
-			log.Info("set name to: " + msg.Value)
-			//TODO check if already registered
-			//TODO name change doesnt persist, need to share reference to vertex map
-			vertex.name = msg.Value
-			state.vertexs[vertex.vertexid] = *vertex
-			//state.
-			log.Info("name now : " + vertex.name + " " + vertex.vertexid.String())
-			//set owner
-			//TODO make this pubkey
-			nodestate.unames[newName] = vertex.vertexid
-
-			xmsg := protocol.Msg{Type: NAME, Value: msg.Value + "|registered"}
-			vertex.out_write <- protocol.MsgToGen(xmsg)
-
-		}
+		return
 		// msgByte, _ := json.Marshal(xmsg)
 		// //cl.wsConn.WriteMessage(messageType, msgByte)
 		// vertex.wsConn.WriteMessage(1, msgByte)
@@ -213,6 +247,8 @@ func handleMsg(state *NodeState, vertex *Vertex, msg protocol.Msg) {
 	}
 
 	//save state
+	//TODO this will change with tx
+	//store chat message in separate state not synchronized
 	if msg.Type == CHAT || msg.Type == NAME {
 		log.Debug("save state")
 		nodestate.msgstate.MsgHistory = append(nodestate.msgstate.MsgHistory, msg)
@@ -232,7 +268,7 @@ func msgHistFromJson(p []byte) []protocol.Msg {
 	var msghist []protocol.Msg
 	err := json.Unmarshal(p, &msghist)
 	if err != nil {
-		log.Println("couldnt parse message")
+		log.Error("couldnt parse message ", string(p))
 	}
 
 	return msghist

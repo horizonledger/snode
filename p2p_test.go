@@ -3,11 +3,15 @@ package main
 import (
 	"fmt"
 	"log"
+
+	//"os"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/gofrs/uuid"
 	"github.com/gorilla/websocket"
+	//"github.com/horizonledger/protocol"
 )
 
 func TestBasic(t *testing.T) {
@@ -17,33 +21,67 @@ func TestBasic(t *testing.T) {
 
 	//TODO startup node and have all state available
 
-	config := Config{Port: 8000}
+	nodePort := 8000
+	config := Config{Port: nodePort}
 
 	log.Println(config)
-	go serveAll(config)
+	startupNodeStub(config)
+
+	nodestate = NodeState{isLeader: true, msgstate: msgstate, vertexs: make(map[uuid.UUID]Vertex)}
+	nodestate.unames = make(map[string]uuid.UUID)
+
+	//go serveAll(config)
 
 	time.Sleep(1 * time.Second)
 
-	port := 8000
-	address := "ws://127.0.0.1:" + strconv.Itoa(port) + "/ws"
+	address := "ws://127.0.0.1:" + strconv.Itoa(nodePort) + "/ws"
 	ws, _, err := websocket.DefaultDialer.Dial(address, nil)
+	//msg := protocol.Msg{Type: "test", Value: "test"}
+
 	if err != nil {
 		fmt.Println("Cannot connect to websocket: ", address)
-		return
-	} else {
-		//log.Println("ws ", ws)
-		sendMsg("test", ws)
-
+		t.Error("error websocket connect")
 	}
 
-	//log.Debug(vertexs)
+	//log.Println("ws ", ws)
+	sendMsg("test", ws)
 
-	if err := ws.WriteMessage(
-		websocket.TextMessage,
-		[]byte("test"),
-	); err != nil {
-		fmt.Println("WebSocket Write Error")
-	}
+	//TODO waiting
+	// for _, v := range nodestate.vertexs {
+	// 	log.Println(v.vertexid)
+	// 	msg := <-v.in_read
+	// 	log.Println(msg)
+	// 	//protocol.Parse(msg)
+	// 	if msg.Type != "Msg" {
+	// 		t.Error("wrong type")
+	// 	}
+	// }
+
+	time.Sleep(1 * time.Second)
+	log.Println("....")
+	log.Println(" ", len(nodestate.msgstate.MsgHistory))
+
+	//os.Exit(1)
+	//return
+
+	// if err := ws.WriteMessage(
+	// 	websocket.TextMessage,
+	// 	protocol.ParseMessageToBytes(msg),
+	// ); err != nil {
+	// 	t.Error("error websocket connect")
+	// 	//fmt.Println("WebSocket Write Error")
+	// }
+
+	// _, p, err := ws.ReadMessage()
+	// if err != nil {
+	// 	log.Println(err)
+	// 	t.Error("error read ", err)
+	// 	return
+	// }
+
+	// if string(p) != "test" {
+	// 	t.Error("error read ", p)
+	// }
 
 	// inmsg := <-vertex.in_read
 

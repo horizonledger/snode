@@ -22,6 +22,7 @@ type NodeState struct {
 	unames   map[string]uuid.UUID
 	msgstate MsgState
 	vertexs  map[uuid.UUID]Vertex
+	pubsub   *Pubsub
 }
 
 type MsgState struct {
@@ -61,7 +62,7 @@ func connectOutbound(address string) {
 
 		go readLoop(&vertex)
 		go readHandler(&nodestate, &vertex)
-		go writeLoop(&vertex)
+		go writeLoop(&nodestate, &vertex)
 
 		msg := protocol.Msg{Type: "HNDPEER", Value: "REQUEST"}
 		log.Debug("send ", msg)
@@ -71,12 +72,28 @@ func connectOutbound(address string) {
 
 }
 
+func subToOut(vertex *Vertex, genchan chan protocol.Gen) {
+	for {
+		log.Println("waiting ")
+		//TODO put in
+		msg := <-genchan
+		vertex.out_write <- msg
+		log.Println("..sub read ", msg)
+	}
+}
+
+func hookVertexToSub(vertex *Vertex, topic string) {
+	ch1 := make(chan protocol.Gen)
+	go subToOut(vertex, ch1)
+	nodestate.pubsub.Subscribe(topic, ch1)
+}
+
 // inbound ws connection
 func serveWs(w http.ResponseWriter, r *http.Request) {
 	// upgrade this connection to a WebSocket
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		log.Error("error ", err)
 	}
 
 	var newuid = uuid.Must(uuid.NewV4())
@@ -93,9 +110,16 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	//TODO only send/receive after handshake, for that we need to read only 1 message first and then open chans
 	// --- handshake ---
 
+	log.Info("init readLoop")
 	go readLoop(&vertex)
+	log.Info("init readHandler")
 	go readHandler(&nodestate, &vertex)
-	go writeLoop(&vertex)
+	log.Info("init writeLoop")
+	go writeLoop(&nodestate, &vertex)
+
+	//TODO do this on SUB message from subscriber
+	hookVertexToSub(&vertex, "vertex")
+	hookVertexToSub(&vertex, "status")
 
 	//wait for handshake from inbound
 	//TODO timeout
@@ -114,42 +138,6 @@ func syncLoop(vertexs map[uuid.UUID]Vertex) {
 	//for each vertex check the height
 
 	//if we're behind then
-}
-
-func statusLoop(vertexs map[uuid.UUID]Vertex) {
-	quit := make(chan struct{})
-	ticker := time.NewTicker(20 * time.Second)
-	for {
-		//log.Println("statusLoop")
-		select {
-		case <-ticker.C:
-			log.Debug("status last update: ", nodestate.msgstate.LastUpdate.String())
-			log.Debug(len(vertexs))
-			for _, v := range vertexs {
-				xmsg := protocol.Msg{Type: "STATUS", Value: nodestate.msgstate.LastUpdate.String()}
-				v.out_write <- protocol.MsgToGen(xmsg)
-
-			}
-
-		case <-quit:
-			ticker.Stop()
-			return
-		}
-	}
-}
-
-func reportVertexs() {
-	quit := make(chan struct{})
-	ticker := time.NewTicker(20 * time.Second)
-	for {
-		select {
-		case <-ticker.C:
-			log.Debug("#vertexs ", len(nodestate.vertexs))
-		case <-quit:
-			ticker.Stop()
-			return
-		}
-	}
 }
 
 // continously query peers
@@ -219,7 +207,7 @@ func startupNode(config Config) {
 	//TODO continously check leader election
 
 	go saveState(config.StateFile, &nodestate)
-	go reportVertexs()
+
 	go syncState()
 
 	//TODO
@@ -227,6 +215,22 @@ func startupNode(config Config) {
 	nodestate.unames = make(map[string]uuid.UUID)
 	var newuid = uuid.Must(uuid.NewV4())
 	nodestate.unames["test"] = newuid
+
+	nodestate.pubsub = NewPubsub()
+
+	//TESTING
+	// ch1 := make(chan protocol.Gen)
+	// go func() {
+	// 	for {
+	// 		log.Println("waiting ")
+	// 		msg := <-ch1
+	// 		log.Println("sub read ", msg)
+	// 	}
+	// }()
+	// topic := "vertex"
+	// nodestate.pubsub.Subscribe(topic, ch1)
+
+	//pubsub.Publish("test", "just testing")
 
 	log.Info("serve")
 	go serveAll(config)
@@ -239,20 +243,35 @@ func startupNode(config Config) {
 		connectOutbound(address)
 	}
 
-	go statusLoop(nodestate.vertexs)
+	//start publishing default topics
+	go pubVertexs(nodestate.pubsub)
+	go pubStatus(nodestate.vertexs)
 
 }
 
-func sendMsg(msg string, ws *websocket.Conn) {
+func sendMsg(textmsg string, ws *websocket.Conn) {
+	msg := protocol.Msg{Type: "Msg", Value: textmsg}
+	gen := protocol.MsgToGen(msg)
 
-	log.Debug("send ", msg)
+	log.Info("send ", gen)
 	if err := ws.WriteMessage(
 		websocket.TextMessage,
-		[]byte(msg),
+		protocol.ParseGenToBytes(gen),
 	); err != nil {
 		fmt.Println("WebSocket Write Error")
 	}
 }
+
+// func sendTextMsg(msg string, ws *websocket.Conn) {
+
+// 	log.Debug("send ", msg)
+// 	if err := ws.WriteMessage(
+// 		websocket.TextMessage,
+// 		[]byte(msg),
+// 	); err != nil {
+// 		fmt.Println("WebSocket Write Error")
+// 	}
+// }
 
 // startup for testing
 // func startupNodeStub(config Config) {
@@ -263,5 +282,18 @@ func serveAll(config Config) {
 	log.Info("serve on ", config.Port)
 	setupRoutes()
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(config.Port), nil))
+
+}
+
+// startup for testing
+func startupNodeStub(config Config) {
+
+	nodestate = NodeState{isLeader: true, msgstate: msgstate, vertexs: make(map[uuid.UUID]Vertex)}
+	nodestate.unames = make(map[string]uuid.UUID)
+	var newuid = uuid.Must(uuid.NewV4())
+	nodestate.unames["test"] = newuid
+
+	log.Info("serve")
+	go serveAll(config)
 
 }
