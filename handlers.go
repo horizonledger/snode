@@ -43,7 +43,9 @@ func containsName(m map[string]uuid.UUID, v string) bool {
 }
 
 func handleNameRegister(nodestate *NodeState, vertex *Vertex, newName string) {
-	//newName := msg.Value
+	//register name only, no transfers yet
+
+	//check duplicate names on registration
 	if containsName(nodestate.unames, newName) {
 		log.Debug("name exists")
 		//TODO better message here
@@ -110,13 +112,42 @@ func handleRequest(state *NodeState, vertex *Vertex, msg protocol.Msg) {
 			vertex.isClient = true
 
 			//separate message. client needs to pull
-			pushState(*vertex)
+			//pushState(*vertex)
 
 			//push uuid to client
 			infoMsg := protocol.Msg{Type: "uuid", Value: vertex.vertexid.String()}
 			vertex.out_write <- protocol.MsgToGen(infoMsg)
 
 		}
+
+	case CHAT:
+		log.Info("handle chat")
+
+		//TODO add author name
+		xmsg := protocol.Msg{Category: "PUB", Type: "CHAT", Value: msg.Value}
+		nodestate.pubsub.Publish("chat", protocol.MsgToGen(xmsg))
+
+		cid := vertex.vertexid.String()
+		log.Debug("vertex name: ", vertex.name)
+		log.Debug("vertexid: ", cid)
+		if vertex.name == "default" {
+			log.Info("need to register")
+			//cid = vertex.name
+			xmsg := protocol.Msg{Type: INFO, Value: "register name first"}
+			vertex.out_write <- protocol.MsgToGen(xmsg)
+
+		} else {
+			textmsg := vertex.name + ": " + msg.Value
+			log.Debug("textmsg ", textmsg)
+			//broadcast
+			log.Debug("vertexs len ", len(state.vertexs))
+
+			//TODO fix publish here
+			//broadcast(state, textmsg)
+		}
+
+	default:
+		log.Warn("unknwon request type")
 	}
 }
 
@@ -210,38 +241,10 @@ func handleMsg(state *NodeState, vertex *Vertex, msg protocol.Msg) {
 		// 	vertex.out_write <- xmsg
 		// }
 
-	case CHAT:
-		log.Info("handle chat")
-
-		cid := vertex.vertexid.String()
-		log.Debug("vertex name: ", vertex.name)
-		log.Debug("vertexid: ", cid)
-		if vertex.name == "default" {
-			log.Info("need to register")
-			//cid = vertex.name
-			xmsg := protocol.Msg{Type: INFO, Value: "register name first"}
-			vertex.out_write <- protocol.MsgToGen(xmsg)
-
-		} else {
-			textmsg := vertex.name + ": " + msg.Value
-			log.Debug("textmsg ", textmsg)
-			//broadcast
-			log.Debug("vertexs len ", len(state.vertexs))
-			//TODO fix
-			broadcast(state, textmsg)
-		}
-
 		//testing
 		// xmsg := protocol.Msg{Type: "chat", Value: textmsg}
 		// vertex.out_write <- xmsg
 
-	//register name only, no transfers yet
-	case NAME:
-		//TODO check duplicate names on registration
-		return
-		// msgByte, _ := json.Marshal(xmsg)
-		// //cl.wsConn.WriteMessage(messageType, msgByte)
-		// vertex.wsConn.WriteMessage(1, msgByte)
 	default:
 		return
 	}

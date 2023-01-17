@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/signal"
 
+	//"github.com/horizonledger/node/util"
+
 	log "github.com/sirupsen/logrus"
 
 	"github.com/gorilla/websocket"
@@ -68,6 +70,10 @@ func setupRoutes() {
 }
 
 func main() {
+	// rname := GetRandomName(10)
+	// log.Info(rname)
+	// return
+
 	portArg := flag.Int("port", 0, "port number")
 	configFileArg := flag.String("config", "", "config file")
 	flag.Parse()

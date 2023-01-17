@@ -30,16 +30,16 @@ type Vertex struct {
 	//isLeader  bool
 }
 
-func broadcast(state *NodeState, textmsg string) {
-	for _, cl := range state.vertexs {
-		log.Debug("send to ", cl.vertexid, textmsg)
-		//TODO in separate generic function which translates Msg to Gen
-		xmsg := Msg{Type: "chat", Value: textmsg}
-		jxmsg := ParseMessageToBytes(xmsg)
-		gen := Gen{Type: "Msg", Value: jxmsg}
-		cl.out_write <- gen
-	}
-}
+// func broadcast(state *NodeState, textmsg string) {
+// 	for _, cl := range state.vertexs {
+// 		log.Debug("send to ", cl.vertexid, textmsg)
+// 		//TODO in separate generic function which translates Msg to Gen
+// 		xmsg := Msg{Type: "chat", Value: textmsg}
+// 		jxmsg := ParseMessageToBytes(xmsg)
+// 		gen := Gen{Type: "Msg", Value: jxmsg}
+// 		cl.out_write <- gen
+// 	}
+// }
 
 func readLoop(vertex *Vertex) {
 	for {
@@ -49,10 +49,10 @@ func readLoop(vertex *Vertex) {
 			log.Warn("error read loop ", err)
 			return
 		}
-		log.Info("bytes received: ", string(p)+" "+vertex.name)
+		log.Debug("bytes received: ", string(p)+" "+vertex.name)
 		//msg := ParseMessageFromBytes(p)
 		genmsg := ParseGenFromBytes(p)
-		log.Info("gen received: ", genmsg.Type+" "+vertex.vertexid.String())
+		log.Debug("gen received: ", genmsg.Type+" "+vertex.vertexid.String())
 		//TODO
 		if vertex.name != "default" {
 			genmsg.Sender = vertex.name
@@ -60,7 +60,7 @@ func readLoop(vertex *Vertex) {
 		//vertex.vertexid
 		genmsg.Time = time.Now()
 
-		log.Info("put msg in chan: ", genmsg)
+		log.Debug("msg in chan: ", genmsg)
 
 		//gengmsg.Value = x
 		//z := ParseMessageFromBytes(genmsg.Value)
@@ -101,16 +101,9 @@ func handleSub(nodestate *NodeState, vertex *Vertex, msg protocol.Msg) {
 	topic := msg.Value
 	log.Info("handle sub ", topic)
 
-	//maybe jsut
-	//validate topic is valid
+	//TODO validate topic is valid
 	hookVertexToSub(vertex, topic)
 
-	//switch msg.Value {
-	//TODO create a map of string > func
-	// case "vertex":
-	//hookVertexToSub(&vertex, "vertex")
-	//
-	//}
 }
 
 func readHandler(nodestate *NodeState, vertex *Vertex) {
@@ -135,6 +128,8 @@ func readHandler(nodestate *NodeState, vertex *Vertex) {
 			case "SUB":
 				log.Info("sub...")
 				handleSub(nodestate, vertex, msg)
+			default:
+				log.Info("unknown category")
 
 			}
 			//TODO
