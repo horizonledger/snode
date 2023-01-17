@@ -33,13 +33,6 @@ const INFO = "info"
 func containsName(m map[string]uuid.UUID, v string) bool {
 	_, ok := m[v]
 	return ok
-
-	// for _, x := range m {
-	// 	if x == v {
-	// 		return true
-	// 	}
-	// }
-	// return false
 }
 
 func handleNameRegister(nodestate *NodeState, vertex *Vertex, newName string) {

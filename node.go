@@ -19,10 +19,11 @@ var nodestate NodeState
 type NodeState struct {
 	isLeader bool
 	//TODO change entry pubkeys
-	unames   map[string]uuid.UUID
-	msgstate MsgState
-	vertexs  map[uuid.UUID]Vertex
-	pubsub   *Pubsub
+	unames      map[string]uuid.UUID
+	cashbalance map[string]uint64
+	msgstate    MsgState
+	vertexs     map[uuid.UUID]Vertex
+	pubsub      *Pubsub
 }
 
 type MsgState struct {
@@ -124,7 +125,7 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	//wait for handshake from inbound
 	//TODO timeout
 
-	// //announce new client
+	// TODO //announce new client
 	// for _, cl := range vertexs {
 	// 	welcome_msg := Msg{Type: "chat", Value: newuid.String() + " entered"}
 	// 	msgByte, _ := json.Marshal(welcome_msg)
@@ -176,6 +177,25 @@ func isLeader() bool {
 	}
 }
 
+func initGenesis(nodestate NodeState) {
+	//read from json file
+	nodestate.cashbalance["satoshi"] = 200
+	nodestate.cashbalance["hal"] = 100
+}
+
+func applyCashTx(nodestate NodeState, cashtx protocol.CashTx) {
+	//func transferCash(nodestate NodeState, from string, to string, amount uint64) {
+	//checks
+	nodestate.cashbalance[cashtx.Sender] -= cashtx.Amount
+	nodestate.cashbalance[cashtx.Receiver] += cashtx.Amount
+}
+
+func showAllBal(nodestate NodeState) {
+	for r := range nodestate.cashbalance {
+		log.Info(r, " has ", nodestate.cashbalance[r])
+	}
+}
+
 func startupNode(config Config) {
 	//check storage
 	//var state State
@@ -210,26 +230,19 @@ func startupNode(config Config) {
 
 	go syncState()
 
-	//TODO
 	nodestate = NodeState{isLeader: true, msgstate: msgstate, vertexs: make(map[uuid.UUID]Vertex)}
 	nodestate.unames = make(map[string]uuid.UUID)
-	var newuid = uuid.Must(uuid.NewV4())
-	nodestate.unames["test"] = newuid
+	nodestate.cashbalance = make(map[string]uint64)
+
+	initGenesis(nodestate)
+
+	//TESTING
+	showAllBal(nodestate)
+	tx := protocol.CashTx{Sender: "satoshi", Receiver: "hal", Amount: 50}
+	applyCashTx(nodestate, tx)
+	showAllBal(nodestate)
 
 	nodestate.pubsub = NewPubsub()
-
-	//TODO remove
-	//TESTING
-	// ch1 := make(chan protocol.Gen)
-	// go func() {
-	// 	for {
-	// 		log.Println("waiting ")
-	// 		msg := <-ch1
-	// 		log.Println("sub read ", msg)
-	// 	}
-	// }()
-	// topic := "vertex"
-	// nodestate.pubsub.Subscribe(topic, ch1)
 
 	log.Info("serve")
 	go serveAll(config)
@@ -260,22 +273,6 @@ func sendMsg(textmsg string, ws *websocket.Conn) {
 		fmt.Println("WebSocket Write Error")
 	}
 }
-
-// func sendTextMsg(msg string, ws *websocket.Conn) {
-
-// 	log.Debug("send ", msg)
-// 	if err := ws.WriteMessage(
-// 		websocket.TextMessage,
-// 		[]byte(msg),
-// 	); err != nil {
-// 		fmt.Println("WebSocket Write Error")
-// 	}
-// }
-
-// startup for testing
-// func startupNodeStub(config Config) {
-
-// }
 
 func serveAll(config Config) {
 	log.Info("serve on ", config.Port)

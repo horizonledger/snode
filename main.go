@@ -9,8 +9,6 @@ import (
 	"os"
 	"os/signal"
 
-	//"github.com/horizonledger/node/util"
-
 	log "github.com/sirupsen/logrus"
 
 	"github.com/gorilla/websocket"
@@ -40,7 +38,6 @@ func getConfig(conffile string) Config {
 
 	if _, err := os.Stat(conffile); os.IsNotExist(err) {
 		log.Println("config file does not exist. create a file named ", conffile)
-		//return nil
 	}
 
 	content, err := ioutil.ReadFile(conffile)
@@ -72,13 +69,10 @@ func setupRoutes() {
 func main() {
 	// rname := GetRandomName(10)
 	// log.Info(rname)
-	// return
 
 	portArg := flag.Int("port", 0, "port number")
 	configFileArg := flag.String("config", "", "config file")
 	flag.Parse()
-	//println("portArg ", *portArg)
-	//println("configFileArg ", *configFileArg)
 
 	cfile := "config.json"
 	if *configFileArg != "" {
@@ -91,11 +85,6 @@ func main() {
 		config.Port = *portArg
 	}
 
-	// 	log.Trace("Something very low level.")
-	// log.Debug("Useful debugging information.")
-	// log.Info("Something noteworthy happened!")
-	// log.Warn("You should probably take a look at this.")
-	// log.Error("Something failed but I'm not quitting.")
 	log.SetLevel(log.DebugLevel)
 	log.Info(config)
 	quit := make(chan os.Signal)
