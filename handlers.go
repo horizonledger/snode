@@ -6,7 +6,7 @@ import (
 
 	"github.com/gofrs/uuid"
 	"github.com/horizonledger/protocol"
-	"github.com/horizonledger/protocol/crypto"
+	//"github.com/horizonledger/protocol/crypto"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -82,12 +82,12 @@ func handleTx(state *NodeState, vertex *Vertex, tx protocol.NameTx) {
 		// log.Debug(tx.Signature)
 		// log.Debug(tx.SenderPubkey)
 		// log.Debug(tx)
-		pub := crypto.PubKeyFromHex(tx.SenderPubkey)
-		sigValid := crypto.VerifySignedTx(pub, tx)
-		log.Println("verified tx ", sigValid)
-		if sigValid {
-			handleNameRegister(state, vertex, tx.Name)
-		}
+		// pub := crypto.PubKeyFromHex(tx.SenderPubkey)
+		// sigValid := crypto.VerifySignedTx(pub, tx)
+		// log.Println("verified tx ", sigValid)
+		// if sigValid {
+		// 	handleNameRegister(state, vertex, tx.Name)
+		// }
 	}
 
 }
@@ -124,7 +124,8 @@ func handleRequest(state *NodeState, vertex *Vertex, msg protocol.Msg) {
 		log.Info("handle chat")
 
 		//TODO add author name
-		xmsg := protocol.Msg{Category: "PUB", Type: "CHAT", Value: msg.Value}
+		//xmsg := protocol.Msg{Category: "PUB", Type: "CHAT", Value: msg.Value}
+		xmsg := protocol.Msg{Type: "CHAT", Value: msg.Value}
 		nodestate.pubsub.Publish("chat", protocol.MsgToGen(xmsg))
 
 		cid := vertex.vertexid.String()

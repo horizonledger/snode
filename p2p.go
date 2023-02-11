@@ -117,21 +117,22 @@ func readHandler(nodestate *NodeState, vertex *Vertex) {
 			//msg.Sender = vertex.vertexid
 			msg.Sender = vertex.name
 			log.Info("msg handler ", msg)
-			switch msg.Category {
-			case "REQ":
-				log.Info("request...")
-				handleRequest(nodestate, vertex, msg)
-			case "REP":
-				log.Info("reply...")
-			case "PUB":
-				log.Info("pub...")
-			case "SUB":
-				log.Info("sub...")
-				handleSub(nodestate, vertex, msg)
-			default:
-				log.Info("unknown category")
+			//TODO
+			// switch msg.Category {
+			// case "REQ":
+			// 	log.Info("request...")
+			// 	handleRequest(nodestate, vertex, msg)
+			// case "REP":
+			// 	log.Info("reply...")
+			// case "PUB":
+			// 	log.Info("pub...")
+			// case "SUB":
+			// 	log.Info("sub...")
+			// 	handleSub(nodestate, vertex, msg)
+			// default:
+			// 	log.Info("unknown category")
 
-			}
+			// }
 			//TODO
 			//handleMsg(nodestate, vertex, msg)
 

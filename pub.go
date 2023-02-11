@@ -19,7 +19,8 @@ func pubVertexs(pubsub *Pubsub) {
 		case <-ticker.C:
 			log.Info("#vertexs ", len(nodestate.vertexs))
 			s := fmt.Sprintf("%d", len(nodestate.vertexs))
-			msg := protocol.Msg{Category: "PUB", Type: "numvertex", Value: s}
+			//msg := protocol.Msg{Category: "PUB", Type: "numvertex", Value: s}
+			msg := protocol.Msg{Type: "numvertex", Value: s}
 			pubsub.Publish("vertex", protocol.MsgToGen(msg))
 		case <-quit:
 			ticker.Stop()
@@ -37,7 +38,8 @@ func pubStatus(pubsub *Pubsub) {
 		case <-ticker.C:
 			log.Debug("status last update: ", nodestate.msgstate.LastUpdate.String())
 			//log.Debug(len(vertexs))
-			xmsg := protocol.Msg{Category: "PUB", Type: "status", Value: nodestate.msgstate.LastUpdate.String()}
+			//xmsg := protocol.Msg{Category: "PUB", Type: "status", Value: nodestate.msgstate.LastUpdate.String()}
+			xmsg := protocol.Msg{Type: "status", Value: nodestate.msgstate.LastUpdate.String()}
 			pubsub.Publish("status", protocol.MsgToGen(xmsg))
 			// for _, v := range vertexs {
 			// 	//v.out_write <- protocol.MsgToGen(xmsg)
